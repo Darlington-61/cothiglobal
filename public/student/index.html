@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>COTHIGLOBAL Student Examination Terminal</title>
+  <link rel="icon" type="image/x-icon" href="icon.ico">
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+</head>
+<body class="kiosk-app-body">
+
+  <!-- TOP HEADER (ACTIVE DURING EXAM) -->
+  <header class="kiosk-header" id="kioskHeader">
+    <div class="brand-block">
+      <div class="school-logo-frame">
+        <img id="kioskSchoolLogo" src="" alt="School Logo" onerror="this.style.display='none'">
+        <span id="kioskLogoFallback">🏫</span>
+      </div>
+      <div>
+        <h1 id="kioskSchoolName">COTHIGLOBAL Examination Portal</h1>
+        <p id="kioskSchoolMotto">Official Computer Based Test Terminal</p>
+      </div>
+    </div>
+
+    <div class="top-meta-block">
+      <!-- SERVER CONNECTION BADGE (DISCRETE) -->
+      <div class="server-badge" id="serverStatusBadge" onclick="openServerConfigModal()" title="Server IP Settings">
+        <span class="status-indicator online" id="serverStatusDot"></span>
+        <span id="serverStatusLabel">Host: Connected</span>
+      </div>
+
+      <!-- CANDIDATE INFO (DURING EXAM) -->
+      <div id="topCandidateTag" class="candidate-tag" style="display: none;">
+        <span class="avatar">👤</span>
+        <div>
+          <strong id="topCandidateName">Candidate Name</strong>
+          <small id="topCandidateReg">REG/000</small>
+        </div>
+      </div>
+
+      <!-- TIMER (DURING EXAM) -->
+      <div id="topTimerBox" class="timer-box" style="display: none;">
+        <span class="timer-title">REMAINING</span>
+        <span class="timer-val" id="topTimerVal">00:00:00</span>
+      </div>
+
+      <!-- SUPERVISOR EXIT BUTTON -->
+      <button class="btn-supervisor-key" onclick="openExitModal()" title="Supervisor Exit">🔒</button>
+    </div>
+  </header>
+
+  <!-- SCREEN 1: KIOSK LOGIN (CLEAN COTHIGLOBAL DESIGN) -->
+  <main id="viewLogin" class="kiosk-screen active">
+    <div class="kiosk-modal-card login-card-cothi">
+      <!-- CENTERED SCHOOL BRANDING IN CARD -->
+      <div class="login-brand-center">
+        <div class="card-logo-frame">
+          <img id="cardSchoolLogo" src="" alt="School Logo" onerror="this.style.display='none'">
+          <span id="cardLogoFallback">🏛️</span>
+        </div>
+        <h2 id="cardSchoolName" class="card-school-title">COTHIGLOBAL Examination Portal</h2>
+        <p id="cardSchoolMotto" class="card-school-subtitle">Computer Based Test Terminal</p>
+      </div>
+
+      <div class="login-divider"></div>
+
+      <h3 class="login-heading">Candidate Login</h3>
+
+      <form id="formLogin" onsubmit="handleKioskLogin(event)">
+        <div class="input-group">
+          <label>Registration Number</label>
+          <div class="input-field">
+            <span class="icon">🎓</span>
+            <input type="text" id="regNoInput" placeholder="Enter Registration Number" required autofocus autocomplete="off">
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label>Examination PIN</label>
+          <div class="input-field">
+            <span class="icon">🔑</span>
+            <input type="password" id="pinInput" placeholder="Enter Access PIN" required autocomplete="off">
+          </div>
+        </div>
+
+        <div id="loginAlert" class="alert-msg error" style="display: none;"></div>
+
+        <button type="submit" id="btnVerify" class="btn btn-primary btn-block btn-lg" style="margin-top:20px;">
+          <span>Login to Exam</span>
+        </button>
+      </form>
+      <!-- SELF-REGISTRATION (shown only when the admin enables it) -->
+      <div id="selfRegisterSection" style="display:none; margin-top:16px; border-top:1px dashed #cbd5e1; padding-top:14px;">
+        <button type="button" class="btn btn-outline btn-block" onclick="toggleRegisterForm()" id="toggleRegBtn">🆔 New candidate? Register here</button>
+        <div id="registerForm" style="display:none; margin-top:12px; text-align:left;">
+          <div class="input-group"><label>Full Name</label><div class="input-field"><span class="icon">👤</span><input type="text" id="regNameInput" placeholder="Your full name"></div></div>
+          <div class="input-group"><label>Registration Number</label><div class="input-field"><span class="icon">🎓</span><input type="text" id="regRegNoInput" placeholder="Choose your Reg Number"></div></div>
+          <div class="input-group"><label>Class</label><div class="input-field"><span class="icon">🏫</span><input type="text" id="regClassInput" placeholder="e.g. SS 2"></div></div>
+          <div id="registerAlert" class="alert-msg error" style="display:none;"></div>
+          <button type="button" class="btn btn-success btn-block" onclick="registerCandidate()">Register &amp; Continue</button>
+        </div>
+      </div>
+
+      <!-- SERVER CONNECTION HELPER FOR MULTI-LAPTOP NETWORKS -->
+      <div id="serverConnHelper" style="display: none; margin-top: 18px; padding: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; font-size: 0.82rem; text-align: left;">
+        <div style="font-weight: 700; color: #1e40af; margin-bottom: 4px;">📡 Connect to Teacher's Server (Wi-Fi)</div>
+        <div style="color: #475569; margin-bottom: 8px;">Enter the Server IP address shown on the teacher's screen:</div>
+        <div style="display: flex; gap: 6px;">
+          <input type="text" id="quickServerInput" placeholder="e.g. 192.168.1.164:8000" style="flex: 1; padding: 6px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff;">
+          <button type="button" class="btn btn-primary btn-sm" onclick="quickConnectServer()">Connect</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="quickAutoDetectServer()">Scan</button>
+        </div>
+        <div id="quickConnMsg" style="margin-top: 6px; font-weight: 600; font-size: 0.78rem;"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- SCREEN 2: VERIFICATION & RULES -->
+  <main id="viewVerify" class="kiosk-screen">
+    <div class="kiosk-modal-card wide">
+      <div class="kiosk-badge success">CANDIDATE IDENTIFIED</div>
+      <h2>Confirm Examination Details</h2>
+
+      <img id="bioPhoto" alt="Candidate photo" style="display:none; width:120px; height:120px; object-fit:cover; border-radius:12px; border:2px solid var(--primary); margin:4px auto 14px; box-shadow:0 6px 16px -8px rgba(0,0,0,.3);">
+
+      <div class="bio-summary-table">
+        <div class="bio-row"><span>Student Name:</span><strong id="bioName">-</strong></div>
+        <div class="bio-row"><span>Reg Number:</span><strong id="bioRegNo">-</strong></div>
+        <div class="bio-row"><span>Class:</span><strong id="bioClass">-</strong></div>
+        <div class="bio-row"><span>Subject:</span><strong id="bioSubject" class="highlight">-</strong></div>
+        <div class="bio-row"><span>Allocated Time:</span><strong id="bioDuration">- Minutes</strong></div>
+        <div class="bio-row"><span>Questions Count:</span><strong id="bioTotalQ">- Questions</strong></div>
+      </div>
+
+      <div class="rules-card">
+        <h4>⚠️ Standard Examination Instructions:</h4>
+        <ol>
+          <li>Do not minimize this window or press system navigation keys.</li>
+          <li>Each answer is <strong>auto-saved locally on selection</strong>.</li>
+          <li>You can navigate questions using the palette on the right.</li>
+          <li>When time expires, the paper auto-submits instantly.</li>
+        </ol>
+      </div>
+
+      <div class="button-row">
+        <button type="button" class="btn btn-outline" onclick="logoutCandidate()">Cancel & Sign Out</button>
+        <button type="button" class="btn btn-primary btn-lg" onclick="startExamSession()">
+          <span>BEGIN EXAMINATION NOW</span>
+          <span>🚀</span>
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <!-- SCREEN 3: EXAM WORKSPACE -->
+  <main id="viewExam" class="exam-workspace-screen">
+    <div class="exam-main-panel">
+      <!-- QUESTION HEADER -->
+      <div class="question-top-bar">
+        <div class="q-number-pill" id="qNumberPill">Question 1 of 40</div>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <div class="exam-tool-group">
+            <button type="button" class="exam-tool-btn" onclick="adjustExamFont(-1)" title="Smaller text">A-</button>
+            <button type="button" class="exam-tool-btn" onclick="adjustExamFont(1)" title="Larger text">A+</button>
+            <button type="button" class="exam-tool-btn" onclick="toggleHighContrast()" title="High-contrast mode">◐</button>
+            <button type="button" class="exam-tool-btn" onclick="openCalculator()" title="Calculator &amp; rough work">🧮</button>
+          </div>
+          <div class="q-mark-pill" id="qMarksPill">Marks: 2.5</div>
+        </div>
+      </div>
+
+      <!-- TIME WARNING ALERT BANNER -->
+      <div id="timeWarningBanner" class="exam-warning-banner" style="display: none;">
+        <span class="warning-icon" id="timeWarningIcon">⚠️</span>
+        <span class="warning-text" id="timeWarningText">5 Minutes Remaining! Please review your answers.</span>
+        <button type="button" class="warning-close-btn" onclick="dismissTimeWarning()" title="Dismiss warning">✕</button>
+      </div>
+
+      <!-- QUESTION TEXT -->
+      <div class="question-body">
+        <div class="q-text-content" id="qTextContent">Loading question...</div>
+        <div class="options-group" id="optionsGroup">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+
+      <!-- WORKSPACE CONTROLS -->
+      <div class="workspace-footer">
+        <div class="footer-left">
+          <button type="button" id="btnPrevQ" class="btn btn-outline" onclick="stepQuestion(-1)">← Previous</button>
+          <button type="button" id="btnNextQ" class="btn btn-primary" onclick="stepQuestion(1)">Next Question →</button>
+        </div>
+        <div class="footer-right">
+          <button type="button" id="btnFlagQ" class="btn btn-warning" onclick="toggleFlag()">🚩 Flag Question</button>
+          <button type="button" class="btn btn-success" onclick="openSubmitModal()">✓ Finish & Submit</button>
+        </div>
+      </div>
+
+      <!-- EXAM HOTKEY HINTS BAR -->
+      <div class="exam-hotkey-bar">
+        <span class="hotkey-label">Keyboard Shortcuts:</span>
+        <span class="hotkey-item"><kbd>A</kbd><kbd>B</kbd><kbd>C</kbd><kbd>D</kbd> Select Option</span>
+        <span class="hotkey-item"><kbd>N</kbd> or <kbd>→</kbd> Next</span>
+        <span class="hotkey-item"><kbd>P</kbd> or <kbd>←</kbd> Prev</span>
+        <span class="hotkey-item"><kbd>F</kbd> Flag</span>
+        <span class="hotkey-item"><kbd>S</kbd> Submit</span>
+        <span class="hotkey-item"><kbd>Alt</kbd>+<kbd>C</kbd> Calc</span>
+      </div>
+    </div>
+
+    <!-- PALETTE -->
+    <aside class="palette-sidebar">
+      <div class="palette-top">
+        <h3>Question Navigator</h3>
+        <div class="palette-stats">
+          <span class="stat-pill answered"><span id="statAnswered">0</span> Answered</span>
+          <span class="stat-pill unanswered"><span id="statUnanswered">0</span> Pending</span>
+          <span class="stat-pill flagged"><span id="statFlagged">0</span> Flagged</span>
+        </div>
+      </div>
+
+      <div class="palette-buttons-grid" id="paletteGrid">
+        <!-- 1, 2, 3... -->
+      </div>
+
+      <div class="palette-bottom">
+        <button type="button" class="btn btn-success btn-block btn-lg" onclick="openSubmitModal()">
+          Submit Paper
+        </button>
+      </div>
+    </aside>
+  </main>
+
+  <!-- SCREEN 4: SUBMIT CONFIRMATION MODAL -->
+  <div id="modalSubmit" class="dialog-overlay" style="display: none;">
+    <div class="dialog-card">
+      <h3>Submit Your Examination?</h3>
+      <p>Please review your completion status below:</p>
+      <div class="stat-overview-box">
+        <div><small>Answered</small><strong id="summaryAnswered" class="text-success">0</strong></div>
+        <div><small>Unanswered</small><strong id="summaryUnanswered" class="text-danger">0</strong></div>
+        <div><small>Flagged</small><strong id="summaryFlagged" class="text-warning">0</strong></div>
+      </div>
+      <div id="reviewChips" style="margin:6px 0 14px;"></div>
+      <p class="notice">⚡ Submissions drop into the supervisor console in less than 0.05 seconds.</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-outline" onclick="closeSubmitModal()">Return to Exam</button>
+        <button type="button" id="btnConfirmSubmit" class="btn btn-success" onclick="executeFinalSubmit()">
+          Yes, Submit Now
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 5: SUBMISSION SUCCESS RECEIPT -->
+  <main id="viewReceipt" class="kiosk-screen">
+    <div class="kiosk-modal-card receipt-style">
+      <div class="check-icon">✅</div>
+      <div class="kiosk-badge success">EXAMINATION COMPLETED</div>
+      <h2>Submission Confirmed!</h2>
+      <p>Your examination answers have dropped instantaneously into the server database.</p>
+
+      <div class="receipt-table">
+        <div class="row"><span>Candidate:</span><strong id="recName">-</strong></div>
+        <div class="row"><span>Reg No:</span><strong id="recRegNo">-</strong></div>
+        <div class="row"><span>Exam:</span><strong id="recExam">-</strong></div>
+        <div class="row"><span>Timestamp:</span><strong id="recTime">-</strong></div>
+        <div class="row"><span>Receipt ID:</span><code id="recId">SUB-0000</code></div>
+      </div>
+
+      <div class="completion-notice-box">
+        <div class="notice-icon">📋</div>
+        <div class="notice-text">
+          <h4>Examination Submitted Successfully</h4>
+          <p>Your answers have been securely recorded in the central examination database. Official results will be published and issued by the school administration.</p>
+        </div>
+      </div>
+
+      <button type="button" class="btn btn-primary btn-block btn-lg mt-20" onclick="logoutCandidate()">
+        Exit to Terminal Home
+      </button>
+    </div>
+  </main>
+
+  <!-- SUPERVISOR EXIT MODAL -->
+  <div id="modalExit" class="dialog-overlay" style="display: none;">
+    <div class="dialog-card">
+      <h3>Invigilator / Supervisor Unlock</h3>
+      <p>Enter the master supervisor PIN to exit kiosk mode.</p>
+      <div class="input-field mt-16">
+        <span class="icon">🔒</span>
+        <input type="password" id="exitPinInput" placeholder="Enter PIN (Default: 9999)">
+      </div>
+      <div id="exitAlert" class="alert-msg error" style="display: none;"></div>
+      <div class="dialog-actions mt-20">
+        <button type="button" class="btn btn-outline" onclick="closeExitModal()">Cancel</button>
+        <button type="button" class="btn btn-danger" onclick="confirmSupervisorExit()">Exit Application</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SERVER HOST CONFIG MODAL -->
+  <div id="modalServerConfig" class="dialog-overlay" style="display: none;">
+    <div class="dialog-card">
+      <h3>Host Server Settings</h3>
+      <p>Set the local IP address of the Admin PC running the CBT server.</p>
+      <div class="input-field mt-16">
+        <span class="icon">🌐</span>
+        <input type="text" id="serverHostInput" placeholder="http://192.168.1.15:8000">
+      </div>
+      <div class="dialog-actions mt-20">
+        <button type="button" class="btn btn-outline" onclick="closeServerConfigModal()">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="saveServerHostConfig()">Connect Host</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- CALCULATOR + ROUGH WORK (not saved/submitted) -->
+  <div id="calcModal" class="dialog-overlay" style="display:none;">
+    <div class="dialog-card" style="max-width:420px;">
+      <h3 style="margin-bottom:10px;">🧮 Calculator &amp; Rough Work</h3>
+      <input type="text" id="calcDisplay" readonly value="0" style="width:100%; text-align:right; font-size:1.6rem; font-weight:800; padding:10px 14px; border:1.5px solid var(--border); border-radius:10px; background:#f8fafc; margin-bottom:10px; font-family:ui-monospace,monospace;">
+      <div id="calcKeys" style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px;"></div>
+      <label style="display:block; font-weight:700; font-size:.82rem; margin:14px 0 4px;">Rough work (not submitted)</label>
+      <textarea id="calcPad" rows="4" placeholder="Scribble your working here…" style="width:100%; border:1.5px solid var(--border); border-radius:10px; padding:10px; font-size:.95rem; resize:vertical;"></textarea>
+      <button type="button" class="btn btn-primary btn-block" style="margin-top:14px;" onclick="closeCalculator()">Close</button>
+    </div>
+  </div>
+
+  <script src="mathrender.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+node_modules/
+COTHI-Server-App/
+COTHI-Student-App/
+student-electron-app/electron-bin/
+Installers/
+Claude outputs/
+scratch/
+*.exe
+*.log
+*.zip
+.DS_Store
+Thumbs.db

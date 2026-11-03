@@ -1,0 +1,29 @@
+{
+  "name": "cothi-offline-cbt",
+  "version": "1.0.0",
+  "description": "COTHI Offline CBT Local Server and Kiosk Exam Suite",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "server": "node server/server.js",
+    "kiosk": "electron . --kiosk"
+  },
+  "keywords": [
+    "cbt",
+    "offline-cbt",
+    "kiosk",
+    "electron",
+    "exam"
+  ],
+  "author": "COTHI CBT Systems",
+  "license": "ISC",
+  "dependencies": {
+    "asar": "^3.2.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0"
+  }
+}

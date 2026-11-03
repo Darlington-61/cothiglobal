@@ -1,0 +1,21 @@
+{
+  "name": "cothi-student-kiosk",
+  "version": "1.0.0",
+  "description": "COTHI Secure Desktop Examination Kiosk for Students",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": [
+    "cbt",
+    "kiosk",
+    "student",
+    "exam",
+    "electron"
+  ],
+  "author": "COTHI CBT Systems",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^33.2.0"
+  }
+}
