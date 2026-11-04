@@ -198,13 +198,47 @@ async function syncSchool(schoolCode) {
 }
 
 // REGISTER NEW SCHOOL OFFLINE
+function handleRegSchoolLogoUpload(input) {
+  if (input.files && input.files[0]) {
+    const file = input.files[0];
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      document.getElementById('regSchoolLogo').value = e.target.result;
+      updateRegLogoPreview();
+    };
+    reader.readAsDataURL(file);
+  }
+}
+
+function updateRegLogoPreview() {
+  const logo = (document.getElementById('regSchoolLogo').value || '').trim();
+  const container = document.getElementById('regSchoolLogoThumbContainer');
+  const thumb = document.getElementById('regSchoolLogoThumb');
+  if (container && thumb) {
+    if (logo) {
+      thumb.src = logo;
+      container.style.display = 'flex';
+    } else {
+      container.style.display = 'none';
+    }
+  }
+}
+
+function clearRegSchoolLogo() {
+  const logoInput = document.getElementById('regSchoolLogo');
+  if (logoInput) logoInput.value = '';
+  const fileInput = document.getElementById('regSchoolLogoFileInput');
+  if (fileInput) fileInput.value = '';
+  updateRegLogoPreview();
+}
+
 function openRegisterSchoolModal() {
   const alertBox = document.getElementById('registerSchoolAlert');
   if (alertBox) alertBox.style.display = 'none';
   document.getElementById('regSchoolName').value = '';
   document.getElementById('regSchoolCode').value = '';
   document.getElementById('regSchoolMotto').value = '';
-  document.getElementById('regSchoolLogo').value = '';
+  clearRegSchoolLogo();
   document.getElementById('regSchoolPrimaryColor').value = '#2563eb';
   document.getElementById('regSchoolColorPicker').value = '#2563eb';
   document.getElementById('regSchoolAccentColor').value = '#f8fafc';

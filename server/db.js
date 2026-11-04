@@ -243,6 +243,17 @@ const db = {
   saveSettings(data, persistToRegistry = true) {
     const current = this.getSettings();
     const updated = { ...current, ...data };
+
+    // If school code changed and no explicit logo was provided in data, look up the target school's logo (never bleed old logo)
+    if (data.schoolCode && data.schoolCode.trim().toLowerCase() !== (current.schoolCode || '').trim().toLowerCase()) {
+      if (data.schoolLogo === undefined) {
+        const cleanCode = data.schoolCode.trim().toLowerCase();
+        const custom = this.getCustomSchools().find(s => (s.code || '').toLowerCase() === cleanCode);
+        const central = this.getCothiCentralSchools().find(s => (s.code || '').toLowerCase() === cleanCode);
+        updated.schoolLogo = (custom && custom.logo) || (central && central.logo) || '';
+      }
+    }
+
     writeJSON(SETTINGS_FILE, updated);
 
     // Automatically ensure this school is preserved in the persistent school registry

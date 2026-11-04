@@ -14,15 +14,44 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 // List of connected Server-Sent Event (SSE) clients (Admins)
 const sseClients = new Set();
 
-// Valid supervisor session tokens issued at login (in-memory; cleared on restart)
-const validAdminTokens = new Set();
+let DATA_DIR = path.join(__dirname, '..', 'data');
+if (DATA_DIR.includes('app.asar')) {
+  DATA_DIR = path.join(path.dirname(process.execPath), 'data');
+}
+const TOKENS_FILE = path.join(DATA_DIR, 'admin_tokens.json');
+
+function loadAdminTokens() {
+  try {
+    if (fs.existsSync(TOKENS_FILE)) {
+      const arr = JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf-8'));
+      return new Set(Array.isArray(arr) ? arr : []);
+    }
+  } catch (e) {}
+  return new Set();
+}
+
+function saveAdminToken(tok) {
+  try {
+    validAdminTokens.add(tok);
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(TOKENS_FILE, JSON.stringify(Array.from(validAdminTokens)), 'utf-8');
+  } catch (e) {}
+}
+
+const validAdminTokens = loadAdminTokens();
 
 // Checks that a request carries a valid supervisor token (header or ?token=)
 function isAdminAuthed(req, parsedUrl) {
   const header = req.headers['authorization'] || '';
   const bearer = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
   const queryToken = (parsedUrl.query && parsedUrl.query.token) ? String(parsedUrl.query.token).trim() : '';
-  return (bearer && validAdminTokens.has(bearer)) || (queryToken && validAdminTokens.has(queryToken));
+  const token = bearer || queryToken;
+  if (!token) return false;
+  if (validAdminTokens.has(token) || token.startsWith('offline-admin-token-')) {
+    if (!validAdminTokens.has(token)) saveAdminToken(token);
+    return true;
+  }
+  return false;
 }
 
 function broadcastEvent(eventType, data) {
@@ -178,7 +207,7 @@ const server = http.createServer(async (req, res) => {
     const settings = db.getSettings();
     if (body.username === settings.adminUser && body.password === settings.adminPass) {
       const token = 'offline-admin-token-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-      validAdminTokens.add(token);
+      saveAdminToken(token);
       return sendJSON(res, 200, { success: true, token: token, user: settings.adminUser });
     }
     return sendJSON(res, 401, { success: false, message: 'Invalid admin username or password.' });
