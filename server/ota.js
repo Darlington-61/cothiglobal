@@ -5,7 +5,7 @@ const path = require('path');
 const db = require('./db');
 const cothiCloud = require('./cothi-cloud');
 
-const GITHUB_REPO = 'DarArkByte/cothiglobal';
+const GITHUB_REPO = 'Darlington-61/cothiglobal';
 const GITHUB_BRANCH = 'cbt-offline-terminal';
 const ROOT_DIR = path.resolve(__dirname, '..');
 
