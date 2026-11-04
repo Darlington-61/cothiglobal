@@ -437,12 +437,34 @@ async function deleteStudentCandidate(regNo) {
 }
 
 // Add Candidate Modal
+async function fetchNextStudentRegNo() {
+  const regInput = document.getElementById('addStudentReg');
+  if (!regInput) return;
+  try {
+    regInput.placeholder = 'Generating...';
+    const res = await adminFetch('/api/admin/students/next-reg');
+    const data = await res.json();
+    if (data && data.nextRegNo) {
+      regInput.value = data.nextRegNo;
+    }
+  } catch (e) {
+    const code = (window._currentSchoolCode || 'std').toLowerCase();
+    const count = (studentsList ? studentsList.length : 0) + 1;
+    regInput.value = `${code}${String(count).padStart(3, '0')}`;
+  }
+}
+
 function openAddStudentModal() {
   document.getElementById('addStudentAlert').style.display = 'none';
   document.getElementById('addStudentName').value = '';
   document.getElementById('addStudentReg').value = '';
   document.getElementById('addStudentPin').value = document.getElementById('studentsPinDefault').textContent || '1234';
   document.getElementById('modalAddStudent').style.display = 'flex';
+  fetchNextStudentRegNo();
+  setTimeout(() => {
+    const nameEl = document.getElementById('addStudentName');
+    if (nameEl) nameEl.focus();
+  }, 100);
 }
 
 function closeAddStudentModal() {
@@ -459,7 +481,7 @@ async function handleAddStudent(e) {
   const alertEl = document.getElementById('addStudentAlert');
 
   try {
-    const res = await fetch('/api/admin/students', {
+    const res = await adminFetch('/api/admin/students', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, regNo, pin, classLevel, gender })

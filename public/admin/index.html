@@ -916,8 +916,15 @@
           <input type="text" id="addStudentName" placeholder="e.g. John Okoro" required autocomplete="off">
         </div>
         <div class="form-group">
-          <label>Registration Number / Student ID *</label>
-          <input type="text" id="addStudentReg" placeholder="e.g. CTSS/2026/050" required autocomplete="off">
+          <label style="display:flex; justify-content:space-between; align-items:center;">
+            <span>Registration Number / Student ID</span>
+            <span style="font-size:0.75rem; background:#dbeafe; color:#1e40af; padding:2px 8px; border-radius:12px; font-weight:700;">⚡ Auto-Generated</span>
+          </label>
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="addStudentReg" placeholder="Auto-generating..." required autocomplete="off" style="font-weight:700; font-family:monospace; font-size:1rem; letter-spacing:0.5px;">
+            <button type="button" class="btn btn-outline btn-sm" onclick="fetchNextStudentRegNo()" title="Regenerate next number">🔄</button>
+          </div>
+          <small class="text-muted text-xs" style="display:block; margin-top:4px;">Automatically calculated from school prefix & next number.</small>
         </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
           <div class="form-group">

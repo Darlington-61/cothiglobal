@@ -325,6 +325,52 @@ const db = {
   getStudents() {
     return readJSON(STUDENTS_FILE, []);
   },
+  getNextRegNo(targetSchoolCode) {
+    const settings = this.getSettings();
+    const rawCode = (targetSchoolCode || settings.schoolCode || 'STD').trim();
+    const prefix = rawCode.toLowerCase().replace(/[^a-z0-9]/g, '') || 'std';
+    const students = this.getStudents();
+
+    let maxNum = 0;
+    const prefixRegex = new RegExp(`^${prefix}[-_/]?(\\d+)`, 'i');
+    const genericRegex = /(\\d+)$/;
+    let matchedSpecific = false;
+
+    for (const s of students) {
+      if (!s || !s.regNo) continue;
+      const cleanReg = String(s.regNo).trim();
+      const m = cleanReg.match(prefixRegex);
+      if (m) {
+        matchedSpecific = true;
+        const n = parseInt(m[1], 10);
+        if (!isNaN(n) && n > maxNum) maxNum = n;
+      }
+    }
+
+    if (!matchedSpecific) {
+      for (const s of students) {
+        if (!s || !s.regNo) continue;
+        const cleanReg = String(s.regNo).trim();
+        const m = cleanReg.match(genericRegex);
+        if (m) {
+          const n = parseInt(m[1], 10);
+          if (!isNaN(n) && n > maxNum) maxNum = n;
+        }
+      }
+    }
+
+    let nextNum = maxNum + 1;
+    let candidate = `${prefix}${String(nextNum).padStart(3, '0')}`;
+    
+    // Safety check: ensure absolute uniqueness against all existing students
+    const existingSet = new Set(students.map(s => (s.regNo || '').toLowerCase().trim()));
+    while (existingSet.has(candidate.toLowerCase())) {
+      nextNum++;
+      candidate = `${prefix}${String(nextNum).padStart(3, '0')}`;
+    }
+
+    return candidate;
+  },
   findStudent(regNo, pin) {
     const students = this.getStudents();
     const cleanPin = (pin || '').trim().toLowerCase();
@@ -338,6 +384,9 @@ const db = {
     });
   },
   saveStudent(student) {
+    if (!student.regNo || !student.regNo.trim() || student.regNo.trim().toUpperCase() === 'AUTO') {
+      student.regNo = this.getNextRegNo();
+    }
     const students = this.getStudents();
     const idx = students.findIndex(s => s.regNo.toLowerCase() === student.regNo.toLowerCase());
     if (idx >= 0) {
@@ -366,9 +415,12 @@ const db = {
     let updated = 0;
 
     incomingList.forEach(raw => {
-      const regNo = (raw.regNo || '').trim();
       const name = (raw.name || '').trim();
-      if (!regNo || !name) return;
+      if (!name) return;
+      let regNo = (raw.regNo || '').trim();
+      if (!regNo || regNo.toUpperCase() === 'AUTO') {
+        regNo = this.getNextRegNo();
+      }
 
       const studentObj = {
         name: name,

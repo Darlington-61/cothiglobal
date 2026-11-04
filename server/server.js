@@ -687,17 +687,22 @@ const server = http.createServer(async (req, res) => {
   // Admin Add or Update Student Candidate
   if (pathname === '/api/admin/students' && req.method === 'POST') {
     const body = await parseBody(req);
-    if (!body.name || !body.regNo) {
-      return sendJSON(res, 400, { success: false, message: 'Student Name and Registration Number are required.' });
+    if (!body.name || !body.name.trim()) {
+      return sendJSON(res, 400, { success: false, message: 'Student Full Name is required.' });
+    }
+    let regNo = (body.regNo || '').trim();
+    if (!regNo || regNo.toUpperCase() === 'AUTO') {
+      regNo = db.getNextRegNo();
     }
     const student = {
       name: body.name.trim(),
-      regNo: body.regNo.trim(),
+      regNo: regNo,
       pin: (body.pin || '1234').trim(),
       classLevel: (body.classLevel || 'SS 2').trim(),
       gender: (body.gender || 'Not specified').trim()
     };
     db.saveStudent(student);
+    broadcastEvent('students_updated', { added: 1, student });
     return sendJSON(res, 200, { success: true, student });
   }
 
@@ -788,6 +793,18 @@ const server = http.createServer(async (req, res) => {
 
   // --- STUDENT KIOSK APIS ---
 
+  // Student Kiosk & Admin Auto-Generated Registration Number
+  if ((pathname === '/api/student/next-reg' || pathname === '/api/admin/students/next-reg') && req.method === 'GET') {
+    const nextRegNo = db.getNextRegNo();
+    const settings = db.getSettings();
+    return sendJSON(res, 200, {
+      success: true,
+      nextRegNo,
+      schoolCode: settings.schoolCode,
+      schoolName: settings.schoolName
+    });
+  }
+
   // Student self-registration (only when the admin has enabled it)
   if (pathname === '/api/student/register' && req.method === 'POST') {
     const settings = db.getSettings();
@@ -796,13 +813,20 @@ const server = http.createServer(async (req, res) => {
     }
     const body = await parseBody(req);
     const name = (body.name || '').trim();
-    const regNo = (body.regNo || '').trim();
-    if (!name || !regNo) {
-      return sendJSON(res, 400, { success: false, message: 'Enter your full name and registration number.' });
+    if (!name) {
+      return sendJSON(res, 400, { success: false, message: 'Please enter your full name.' });
+    }
+    let regNo = (body.regNo || '').trim();
+    if (!regNo || regNo.toUpperCase() === 'AUTO') {
+      regNo = db.getNextRegNo();
     }
     const existing = db.getStudents().find(s => s.regNo.toLowerCase() === regNo.toLowerCase());
     if (existing) {
-      return sendJSON(res, 200, { success: true, existing: true, message: 'You are already registered — just log in with your PIN.' });
+      if (!body.regNo || body.regNo.toUpperCase() === 'AUTO') {
+        regNo = db.getNextRegNo();
+      } else {
+        return sendJSON(res, 200, { success: true, existing: true, message: 'You are already registered — just log in with your PIN.', regNo: existing.regNo, pin: existing.pin });
+      }
     }
     const student = db.saveStudent({
       name, regNo,
@@ -810,8 +834,13 @@ const server = http.createServer(async (req, res) => {
       classLevel: (body.classLevel || 'SS 2').trim(),
       gender: (body.gender || 'Not Specified').trim()
     });
-    broadcastEvent('students_updated', { added: 1 });
-    return sendJSON(res, 200, { success: true, student: { regNo: student.regNo, name: student.name }, pin: student.pin });
+    broadcastEvent('students_updated', { added: 1, student });
+    return sendJSON(res, 200, {
+      success: true,
+      regNo: student.regNo,
+      pin: student.pin,
+      student: { regNo: student.regNo, name: student.name, classLevel: student.classLevel, pin: student.pin }
+    });
   }
 
   // Student Kiosk Login & Verification

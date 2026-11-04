@@ -237,32 +237,70 @@ function connectStudentLiveEvents() {
 }
 
 // 2. Candidate Login
+async function fetchStudentNextReg() {
+  const regEl = document.getElementById('regRegNoInput');
+  if (!regEl) return;
+  try {
+    const res = await fetch(`${serverHost}/api/student/next-reg`);
+    const data = await res.json();
+    if (data && data.nextRegNo) {
+      regEl.value = data.nextRegNo;
+    }
+  } catch (e) {}
+}
+
 function toggleRegisterForm() {
   const f = document.getElementById('registerForm');
-  if (f) f.style.display = (f.style.display === 'none' || !f.style.display) ? 'block' : 'none';
+  if (f) {
+    const isShowing = f.style.display === 'block';
+    f.style.display = isShowing ? 'none' : 'block';
+    if (!isShowing) {
+      fetchStudentNextReg();
+      setTimeout(() => {
+        const n = document.getElementById('regNameInput');
+        if (n) n.focus();
+      }, 100);
+    }
+  }
 }
 
 async function registerCandidate() {
   const name = document.getElementById('regNameInput').value.trim();
-  const regNo = document.getElementById('regRegNoInput').value.trim();
-  const classLevel = document.getElementById('regClassInput').value.trim();
+  let regNo = document.getElementById('regRegNoInput').value.trim();
+  const classLevel = document.getElementById('regClassInput').value.trim() || 'SS 2';
   const alertBox = document.getElementById('registerAlert');
   alertBox.style.display = 'none';
-  if (!name || !regNo) { alertBox.textContent = 'Enter your full name and registration number.'; alertBox.style.display = 'block'; return; }
+
+  if (!name) {
+    alertBox.textContent = 'Please enter your full name.';
+    alertBox.style.display = 'block';
+    return;
+  }
+
   try {
     const res = await fetch(`${serverHost}/api/student/register`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, regNo, classLevel })
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, regNo: regNo || 'AUTO', classLevel })
     });
     const data = await res.json();
-    if (!res.ok || !data.success) { alertBox.textContent = data.message || 'Registration failed. See your supervisor.'; alertBox.style.display = 'block'; return; }
-    const pin = data.pin || '1234';
-    document.getElementById('regNoInput').value = regNo;
+    if (!res.ok || !data.success) {
+      alertBox.textContent = data.message || 'Registration failed. See your supervisor.';
+      alertBox.style.display = 'block';
+      return;
+    }
+
+    const assignedRegNo = (data.student && data.student.regNo) || data.regNo || regNo;
+    const pin = data.pin || (data.student && data.student.pin) || '1234';
+
+    document.getElementById('regNoInput').value = assignedRegNo;
     document.getElementById('pinInput').value = pin;
     document.getElementById('registerForm').style.display = 'none';
-    alert('Registered successfully!\n\nYour Exam PIN is: ' + pin + '\n\nNow press "Login to Exam" to begin.');
+
+    alert(`🎉 Registration Successful!\n\nCandidate: ${name}\nAssigned Reg Number: ${assignedRegNo}\nExam PIN: ${pin}\n\nYour details have been filled into the login form. Press "Login to Exam" to start!`);
   } catch (e) {
-    alertBox.textContent = 'Cannot reach the exam server.'; alertBox.style.display = 'block';
+    alertBox.textContent = 'Cannot reach the exam server.';
+    alertBox.style.display = 'block';
   }
 }
 
