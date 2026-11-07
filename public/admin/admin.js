@@ -141,13 +141,20 @@ async function fetchCothiSchools(forceRefresh = false) {
       card.style.borderLeft = `6px solid ${s.primaryColor || '#2563eb'}`;
 
       card.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
-          <div>
-            <span class="badge-tag" style="background:${s.primaryColor || '#2563eb'}; color:white;">${s.code.toUpperCase()}</span>
-            ${s.isCustom ? '<span class="badge-tag" style="background:#059669; color:white; margin-left:6px;">OFFLINE REGISTERED</span>' : ''}
-            <h4 style="margin-top:6px; color:${s.primaryColor || '#2563eb'}; font-size:1.25rem;">${s.name}</h4>
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px; gap:12px;">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <div style="width:48px; height:48px; border-radius:10px; border:1px solid #e2e8f0; background:#ffffff; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+              ${s.logo && s.logo.trim() ? `<img src="${s.logo}" style="width:100%; height:100%; object-fit:contain;" alt="${s.name}">` : '<span style="font-size:24px;">🏛️</span>'}
+            </div>
+            <div>
+              <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                <span class="badge-tag" style="background:${s.primaryColor || '#2563eb'}; color:white;">${s.code.toUpperCase()}</span>
+                ${s.isCustom ? '<span class="badge-tag" style="background:#059669; color:white;">OFFLINE REGISTERED</span>' : ''}
+              </div>
+              <h4 style="margin-top:4px; color:${s.primaryColor || '#2563eb'}; font-size:1.15rem; line-height:1.2;">${s.name}</h4>
+            </div>
           </div>
-          ${isCurrent ? '<span class="status-pill status-submitted">CURRENTLY ACTIVE</span>' : ''}
+          ${isCurrent ? '<span class="status-pill status-submitted" style="white-space:nowrap;">CURRENTLY ACTIVE</span>' : ''}
         </div>
         <p class="cothi-instructions" style="margin-bottom:12px;">"${s.motto || 'Excellence in CBT'}"</p>
         <div class="cothi-meta" style="margin-bottom:16px;">
