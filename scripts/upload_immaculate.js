@@ -1,0 +1,1225 @@
+const fs = require('fs');
+const path = require('path');
+const db = require('../server/db');
+const cothiCloud = require('../server/cothi-cloud');
+
+// --- 1. EXAM DEFINITIONS ---
+
+const ss1AgricQuestions = [
+  {
+    id: 1,
+    question: "Agriculture is the practice of growing crops and rearing __.",
+    options: { A: "machines", B: "animals", C: "buildings", D: "stones" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 2,
+    question: "Which of the following is an importance of agriculture?",
+    options: { A: "It causes unemployment", B: "It provides food", C: "It destroys all forests", D: "It reduces food production" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 3,
+    question: "One problem facing agriculture in Nigeria is __.",
+    options: { A: "adequate capital", B: "good roads everywhere", C: "lack of farm machinery", D: "excess storage facilities" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 4,
+    question: "Subsistence agriculture is mainly practiced to __.",
+    options: { A: "feed the farmer and family", B: "export all farm produce", C: "supply only industries", D: "earn foreign exchange" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 5,
+    question: "Commercial agriculture is mainly practiced to __.",
+    options: { A: "feed only the farmer", B: "make profit", C: "avoid selling produce", D: "reduce production" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 6,
+    question: "Which of these is an example of a cash crop?",
+    options: { A: "Cocoa", B: "Grass", C: "Weed", D: "Fern" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 7,
+    question: "One role of government in agricultural development is to provide __.",
+    options: { A: "farm loans", B: "farm pests", C: "poor seedlings", D: "soil erosion" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 8,
+    question: "Agricultural extension officers help farmers by __.",
+    options: { A: "teaching improved farming methods", B: "destroying farm produce", C: "preventing farmers from learning", D: "reducing farm knowledge" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 9,
+    question: "NGO means __.",
+    options: { A: "National Government Office", B: "Non-Governmental Organization", C: "Nigerian General Operation", D: "National Grain Organization" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 10,
+    question: "One role of NGOs in agriculture is to __.",
+    options: { A: "support farmers with training", B: "increase farm pests", C: "prevent rural development", D: "destroy farm roads" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 11,
+    question: "Agricultural laws are rules made to __.",
+    options: { A: "guide agricultural activities", B: "stop all farming activities", C: "encourage land destruction", D: "prevent food production" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 12,
+    question: "Land tenure refers to the system of __.",
+    options: { A: "storing farm tools", B: "owning and controlling land", C: "harvesting crops", D: "feeding farm animals" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 13,
+    question: "Which of the following is a use of land?",
+    options: { A: "Crop production", B: "Making rainfall", C: "Producing sunlight", D: "Creating wind" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 14,
+    question: "Agricultural ecology studies the relationship between organisms and their __.",
+    options: { A: "environment", B: "textbooks", C: "farm buildings only", D: "market prices only" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 15,
+    question: "Which of these is a biotic factor in agricultural ecology?",
+    options: { A: "Temperature", B: "Rainfall", C: "Soil", D: "Earthworm" },
+    correctAnswer: "D",
+    marks: 1
+  },
+  {
+    id: 16,
+    question: "Which of the following is an abiotic factor?",
+    options: { A: "Goat", B: "Bacteria", C: "Sunlight", D: "Grass" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 17,
+    question: "One factor affecting land availability is __.",
+    options: { A: "population growth", B: "school uniforms", C: "handwriting", D: "classroom furniture" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 18,
+    question: "Soil erosion can reduce land availability for farming by __.",
+    options: { A: "improving every soil", B: "removing fertile topsoil", C: "increasing land ownership", D: "creating more farmland" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 19,
+    question: "Which of these is a form of land ownership in Nigeria?",
+    options: { A: "Communal ownership", B: "Classroom ownership", C: "Weather ownership", D: "Crop ownership" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 20,
+    question: "Large-scale commercial farming usually requires __.",
+    options: { A: "adequate capital and equipment", B: "no planning", C: "no labour", D: "no farmland" },
+    correctAnswer: "A",
+    marks: 1
+  }
+];
+
+const ss2AgricQuestions = [
+  {
+    id: 1,
+    question: "Forest management is the practice of __.",
+    options: { A: "destroying all forest trees", B: "protecting and using forests wisely", C: "burning forests every year", D: "converting all forests into buildings" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 2,
+    question: "One major importance of forests is that they provide __.",
+    options: { A: "timber and fuelwood", B: "plastic materials only", C: "cement", D: "petrol" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 3,
+    question: "Forest regulations are rules made to __.",
+    options: { A: "encourage illegal logging", B: "control forest use and protect forest resources", C: "destroy wildlife", D: "prevent tree planting" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 4,
+    question: "Selective exploitation of forests means __.",
+    options: { A: "cutting down every tree in a forest", B: "harvesting selected mature trees", C: "burning the entire forest", D: "removing all forest animals" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 5,
+    question: "Afforestation is the __.",
+    options: { A: "planting of trees on land that was not recently forested", B: "cutting down of trees", C: "burning of forest vegetation", D: "removal of tree roots" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 6,
+    question: "Regeneration in forest management refers to __.",
+    options: { A: "the destruction of young trees", B: "the renewal and regrowth of forest trees", C: "the removal of all vegetation", D: "the drying of forest soil" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 7,
+    question: "Taungya farming involves growing food crops together with __.",
+    options: { A: "forest trees", B: "fish", C: "poultry birds", D: "household furniture" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 8,
+    question: "Farm surveying is the process of __.",
+    options: { A: "measuring and mapping farmland", B: "harvesting crops", C: "feeding livestock", D: "selling farm produce" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 9,
+    question: "One instrument used in farm surveying is the __.",
+    options: { A: "theodolite", B: "cooking pot", C: "wheelbarrow only", D: "watering can" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 10,
+    question: "Farm planning helps a farmer to __.",
+    options: { A: "use farm resources efficiently", B: "waste farm resources", C: "increase farm losses deliberately", D: "avoid keeping farm records" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 11,
+    question: "A farm map shows the __.",
+    options: { A: "arrangement and location of farm features", B: "price of every crop in the market", C: "weight of all farm animals", D: "rainfall of every country" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 12,
+    question: "Pasture is land covered with grasses and other plants used mainly for __.",
+    options: { A: "feeding grazing animals", B: "building houses", C: "producing cement", D: "manufacturing clothes" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 13,
+    question: "Forage crops are crops grown mainly for __.",
+    options: { A: "animal feeding", B: "human decoration", C: "timber production", D: "paper production only" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 14,
+    question: "Which of the following is a leguminous forage crop?",
+    options: { A: "Centro (Centrosema pubescens)", B: "Cassava", C: "Yam", D: "Cocoa" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 15,
+    question: "Which of these is a grass commonly used as forage?",
+    options: { A: "Elephant grass", B: "Mango", C: "Orange", D: "Rubber" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 16,
+    question: "A good forage crop should be __.",
+    options: { A: "palatable and nutritious", B: "poisonous to livestock", C: "difficult for animals to digest", D: "completely free of leaves" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 17,
+    question: "Botanical names are useful because they __.",
+    options: { A: "identify plants scientifically", B: "change every day", C: "are used only for animals", D: "prevent plants from growing" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 18,
+    question: "One factor affecting the distribution of pasture is __.",
+    options: { A: "rainfall", B: "handwriting", C: "classroom size", D: "market uniforms" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 19,
+    question: "Overgrazing can lead to __.",
+    options: { A: "soil erosion and pasture degradation", B: "improved pasture in every situation", C: "unlimited grass growth", D: "increased soil fertility at all times" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 20,
+    question: "One way to improve pasture productivity is by __.",
+    options: { A: "controlled grazing", B: "continuous overgrazing", C: "burning pasture carelessly", D: "allowing weeds to dominate" },
+    correctAnswer: "A",
+    marks: 1
+  }
+];
+
+const ss3AgricQuestions = [
+  {
+    id: 1,
+    question: "Aquaculture is the practice of __.",
+    options: { A: "rearing only cattle", B: "cultivating crops on dry land", C: "breeding and raising aquatic organisms", D: "cutting down forest trees" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 2,
+    question: "Which of the following is an example of an aquatic animal commonly reared in Nigeria?",
+    options: { A: "Goat", B: "Catfish", C: "Sheep", D: "Rabbit" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 3,
+    question: "One importance of fish farming is that it __.",
+    options: { A: "provides animal protein", B: "reduces food production", C: "destroys all water bodies", D: "prevents employment" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 4,
+    question: "Which of these is a type of fish pond?",
+    options: { A: "Earthen pond", B: "Poultry house", C: "Cattle shed", D: "Storage barn" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 5,
+    question: "The first step in constructing a fish pond is to __.",
+    options: { A: "harvest the fish", B: "select a suitable site", C: "sell the fish", D: "feed the fish" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 6,
+    question: "A good fish pond should have __.",
+    options: { A: "a reliable water supply", B: "polluted water", C: "no drainage system", D: "a leaking bottom" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 7,
+    question: "One method of harvesting fish is by using a __.",
+    options: { A: "fishing net", B: "cutlass only", C: "plough", D: "rake" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 8,
+    question: "Maintaining a fish pond includes __.",
+    options: { A: "allowing rubbish to accumulate", B: "monitoring water quality", C: "stopping all feeding permanently", D: "introducing harmful chemicals" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 9,
+    question: "Apiculture is also known as __.",
+    options: { A: "poultry farming", B: "bee-keeping", C: "fish farming", D: "snail farming" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 10,
+    question: "The main product obtained from bee-keeping is __.",
+    options: { A: "honey", B: "milk", C: "wool", D: "leather" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 11,
+    question: "Which of the following is a member of a honeybee colony?",
+    options: { A: "Queen bee", B: "Bull", C: "Ram", D: "Drake" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 12,
+    question: "The main function of the queen bee is to __.",
+    options: { A: "lay eggs", B: "collect water only", C: "guard the farm gate", D: "build fish ponds" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 13,
+    question: "One importance of bee-keeping is that bees help in __.",
+    options: { A: "pollination of crops", B: "soil compaction", C: "fish harvesting", D: "deforestation" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 14,
+    question: "Which of these is protective equipment used in bee-keeping?",
+    options: { A: "Bee veil", B: "Football boot", C: "Rain gauge", D: "Sickle" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 15,
+    question: "A beekeeper should avoid __.",
+    options: { A: "wearing protective clothing", B: "approaching hives carelessly", C: "using a smoker properly", D: "inspecting hives calmly" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 16,
+    question: "Farm power refers to the energy used to perform __.",
+    options: { A: "agricultural operations", B: "classroom examinations", C: "household decoration only", D: "road traffic control" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 17,
+    question: "Which of the following is a source of farm power?",
+    options: { A: "Human labour", B: "Chalkboard", C: "Notebook", D: "School desk" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 18,
+    question: "An example of animal power used on farms is __.",
+    options: { A: "oxen pulling a plough", B: "a television", C: "an electric fan", D: "a radio" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 19,
+    question: "One advantage of mechanical farm power is that it __.",
+    options: { A: "can complete large farm tasks quickly", B: "always requires no maintenance", C: "cannot work on large farms", D: "reduces efficiency in every case" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 20,
+    question: "One disadvantage of using tractors is that they __.",
+    options: { A: "may be expensive to purchase and maintain", B: "never need fuel", C: "cannot save labour", D: "are powered only by human effort" },
+    correctAnswer: "A",
+    marks: 1
+  }
+];
+
+const ss3ChemistryQuestions = [
+  {
+    id: 1,
+    question: "Which of the following is a quantitative method of chemical analysis?",
+    options: { A: "Flame test", B: "Titration", C: "Precipitation test", D: "Gas test" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 2,
+    question: "The apparatus commonly used to deliver an accurate volume of solution during titration is the",
+    options: { A: "Beaker", B: "Test tube", C: "Burette", D: "Evaporating dish" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 3,
+    question: "Which of the following indicators is commonly used in acid-base titration?",
+    options: { A: "Sodium chloride", B: "Phenolphthalein", C: "Copper(II) oxide", D: "Calcium carbonate" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 4,
+    question: "The gas that turns limewater milky is",
+    options: { A: "Oxygen", B: "Hydrogen", C: "Carbon dioxide", D: "Ammonia" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 5,
+    question: "Which of the following ions produces a brick-red flame colour?",
+    options: { A: "Sodium ion", B: "Potassium ion", C: "Calcium ion", D: "Copper(II) ion" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 6,
+    question: "Which reagent is commonly used to test for starch?",
+    options: { A: "Iodine solution", B: "Limewater", C: "Dilute hydrochloric acid", D: "Sodium hydroxide solution" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 7,
+    question: "Crude oil is believed to have originated mainly from",
+    options: { A: "Molten rocks", B: "Ancient organic matter", C: "Pure metals", D: "Atmospheric gases" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 8,
+    question: "The major elements present in crude oil are",
+    options: { A: "Sodium and chlorine", B: "Carbon and hydrogen", C: "Calcium and oxygen", D: "Nitrogen and sulphur only" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 9,
+    question: "The process used to separate crude oil into different fractions is called",
+    options: { A: "Crystallisation", B: "Filtration", C: "Fractional distillation", D: "Sublimation" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 10,
+    question: "Which of the following is a product obtained from crude oil?",
+    options: { A: "Petrol", B: "Sodium hydroxide", C: "Calcium carbonate", D: "Copper sulphate" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 11,
+    question: "The octane number of petrol is a measure of its",
+    options: { A: "Colour", B: "Resistance to knocking", C: "Boiling point only", D: "Sulphur content only" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 12,
+    question: "Cracking is the process of",
+    options: { A: "Combining metals with oxygen", B: "Breaking large hydrocarbon molecules into smaller molecules", C: "Separating salt from water", D: "Converting petrol into crude oil" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 13,
+    question: "Natural gas consists mainly of",
+    options: { A: "Methane", B: "Oxygen", C: "Chlorine", D: "Carbon dioxide" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 14,
+    question: "Which of the following is a petrochemical feedstock used in organic synthesis?",
+    options: { A: "Ethene", B: "Sodium chloride", C: "Calcium oxide", D: "Copper metal" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 15,
+    question: "Metals generally conduct electricity because they contain",
+    options: { A: "Immobile protons", B: "Free-moving electrons", C: "Free-moving neutrons", D: "Immobile ions only" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 16,
+    question: "Which of the following metals belongs to Group 1 of the periodic table?",
+    options: { A: "Calcium", B: "Aluminium", C: "Sodium", D: "Magnesium" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 17,
+    question: "Sodium is usually stored under oil because it",
+    options: { A: "Is very soft", B: "Reacts readily with air and moisture", C: "Has a high density", D: "Does not conduct electricity" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 18,
+    question: "Which of the following is an alkaline earth metal?",
+    options: { A: "Potassium", B: "Sodium", C: "Calcium", D: "Aluminium" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 19,
+    question: "The principal ore from which aluminium is extracted is",
+    options: { A: "Haematite", B: "Bauxite", C: "Galena", D: "Cassiterite" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 20,
+    question: "The extraction of aluminium from purified alumina is carried out mainly by",
+    options: { A: "Filtration", B: "Electrolysis", C: "Simple distillation", D: "Sedimentation" },
+    correctAnswer: "B",
+    marks: 1
+  }
+];
+
+const ss2BiologyQuestions = [
+  {
+    id: 1,
+    question: "The scientific study of plants is known as __.",
+    options: { A: "Zoology", B: "Botany", C: "Ecology", D: "Anatomy" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 2,
+    question: "The classification of plants based on their lifespan includes __.",
+    options: { A: "Annuals, biennials and perennials", B: "Herbs, shrubs and trees only", C: "Monocots and dicots only", D: "Producers and consumers" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 3,
+    question: "Which of the following plants completes its life cycle within one year?",
+    options: { A: "Mango", B: "Cocoa", C: "Maize", D: "Coconut" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 4,
+    question: "The major function of the digestive system is to __.",
+    options: { A: "Transport oxygen", B: "Break down food into absorbable substances", C: "Remove carbon dioxide", D: "Pump blood around the body" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 5,
+    question: "Which of the following organs produces bile?",
+    options: { A: "Stomach", B: "Pancreas", C: "Liver", D: "Small intestine" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 6,
+    question: "The main function of the small intestine is __.",
+    options: { A: "Absorption of digested food", B: "Storage of urine", C: "Production of oxygen", D: "Pumping of blood" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 7,
+    question: "Which enzyme breaks down starch into simpler sugars?",
+    options: { A: "Pepsin", B: "Amylase", C: "Lipase", D: "Trypsin" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 8,
+    question: "The feeding habit of an organism that feeds on both plants and animals is called __.",
+    options: { A: "Herbivory", B: "Carnivory", C: "Omnivory", D: "Parasitism" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 9,
+    question: "The tentacles of Hydra help mainly in __.",
+    options: { A: "Respiration only", B: "Capturing prey and feeding", C: "Excretion of urine", D: "Pumping blood" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 10,
+    question: "Diffusion is the movement of particles from a region of __.",
+    options: { A: "Low concentration to high concentration only", B: "High concentration to low concentration", C: "Low temperature to high temperature", D: "High pressure to low temperature" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 11,
+    question: "Osmosis is the movement of water molecules through a selectively permeable membrane from __.",
+    options: { A: "A dilute solution to a more concentrated solution", B: "A concentrated solution to a dilute solution only", C: "A region of low temperature to high temperature", D: "A region of high pressure to low pressure only" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 12,
+    question: "Which of the following tissues transports water and mineral salts in plants?",
+    options: { A: "Phloem", B: "Xylem", C: "Epidermis", D: "Cortex" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 13,
+    question: "The blood vessels that carry blood away from the heart are called __.",
+    options: { A: "Veins", B: "Capillaries", C: "Arteries", D: "Venules" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 14,
+    question: "The liquid part of blood is known as __.",
+    options: { A: "Plasma", B: "Platelets", C: "Haemoglobin", D: "White blood cells" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 15,
+    question: "Which of the following is the main respiratory organ in humans?",
+    options: { A: "Kidney", B: "Lung", C: "Liver", D: "Stomach" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 16,
+    question: "The tiny air sacs in the lungs where gaseous exchange occurs are called __.",
+    options: { A: "Bronchi", B: "Tracheae", C: "Alveoli", D: "Bronchioles" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 17,
+    question: "During aerobic respiration, glucose is broken down using __.",
+    options: { A: "Nitrogen", B: "Oxygen", C: "Hydrogen only", D: "Carbon dioxide" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 18,
+    question: "Which of the following organs removes urea from the blood?",
+    options: { A: "Heart", B: "Kidney", C: "Pancreas", D: "Oesophagus" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 19,
+    question: "The functional unit of the kidney is the __.",
+    options: { A: "Neuron", B: "Nephron", C: "Alveolus", D: "Villus" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 20,
+    question: "Which of the following is an excretory product in humans?",
+    options: { A: "Undigested food", B: "Urea", C: "Faeces", D: "Saliva" },
+    correctAnswer: "B",
+    marks: 1
+  }
+];
+
+const ss2IgboQuestions = [
+  // Comprehension (1-5)
+  {
+    id: 1,
+    question: "[Akụkọ Nghọta: Uru Ilu Dị n'Asụsụ Igbo]\nGịnị bụ ilu?",
+    options: { A: "Okwu egwuregwu", B: "Okwu amamihe", C: "Okwu agha", D: "Okwu ahịa" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 2,
+    question: "[Akụkọ Nghọta]\nNdị okenye na-eji ilu akụziri ụmụaka __.",
+    options: { A: "izu ohi", B: "ịlụ ọgụ", C: "ezi omume", D: "ịgha ụgha" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 3,
+    question: "[Akụkọ Nghọta]\nIlu na-eme ka asụsụ Igbo __.",
+    options: { A: "maa mma", B: "sie ike", C: "funahụ", D: "bụrụ ihe efu" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 4,
+    question: "[Akụkọ Nghọta]\nIlu 'Onye kwe, chi ya ekwe' na-akụzi __.",
+    options: { A: "umengwụ", B: "mgbalị", C: "ịkpọ asị", D: "aghụghọ" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 5,
+    question: "[Akụkọ Nghọta]\nGịnị mere ụmụ akwụkwọ ji kwesị ịmụ ilu?",
+    options: { A: "Ka ha chefuo asụsụ Igbo", B: "Ka ha ghọta asụsụ Igbo nke ọma", C: "Ka ha kwụsị ịgụ akwụkwọ", D: "Ka ha ghara ịkwanyere ndị okenye ùgwù" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  // Nkejiasụsụ Mkpụrụokwu (6-12)
+  {
+    id: 6,
+    question: "Mkpụrụokwu bụ __.",
+    options: { A: "okwu ma ọ bụ akụkụ okwu nwere nghọta", B: "naanị mkpụrụedemede", C: "naanị ahịrịokwu", D: "akara edemede" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 7,
+    question: "Okwu a na-eji akpọ aha mmadụ, anụmanụ, ebe ma ọ bụ ihe bụ __.",
+    options: { A: "ngwaa", B: "aha", C: "nkọwaaha", D: "njikọokwu" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 8,
+    question: "Kedu nke bụ aha?",
+    options: { A: "Gbaa", B: "Mara mma", C: "Chinedu", D: "Gbaa ọsọ" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 9,
+    question: "Okwu na-egosi ihe mmadụ ma ọ bụ anụmanụ na-eme bụ __.",
+    options: { A: "ngwaa", B: "aha", C: "nnọchiaha", D: "njikọokwu" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 10,
+    question: "Kedu nke bụ ngwaa?",
+    options: { A: "Ụlọ", B: "Gbaa", C: "Nwa", D: "Akwụkwọ" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 11,
+    question: "Okwu e ji anọchi aha mmadụ ma ọ bụ ihe bụ __.",
+    options: { A: "ngwaa", B: "nnọchiaha", C: "aha", D: "nkọwaaha" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 12,
+    question: "Kedu nke bụ nnọchiaha?",
+    options: { A: "Ha", B: "Ụlọ", C: "Nri", D: "Tebụl" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  // Nkejiasụsụ Nkọwasụsụ (13-18)
+  {
+    id: 13,
+    question: "Nkọwasụsụ bụ ọmụmụ banyere __.",
+    options: { A: "usoro iwu na nhazi asụsụ", B: "ịkụ egwu", C: "ịkọ ugbo", D: "ịgba bọọlụ" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 14,
+    question: "Ahịrịokwu bụ __.",
+    options: { A: "mkpụrụedemede naanị", B: "okwu e jikọtara ọnụ nke na-enye echiche zuru oke", C: "akara edemede", D: "naanị aha mmadụ" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 15,
+    question: "Kedu nke bụ ahịrịokwu ziri ezi?",
+    options: { A: "Nwa akwụkwọ na-agụ akwụkwọ.", B: "Akwụkwọ nwa.", C: "Na-agụ akwụkwọ.", D: "Nwa na." },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 16,
+    question: "Otu n'ime akụkụ ahịrịokwu bụ __.",
+    options: { A: "isiokwu", B: "agba", C: "ọnụ", D: "ụkwụ" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 17,
+    question: "Omume aha na-egosi __.",
+    options: { A: "ihe mmadụ ma ọ bụ ihe na-eme", B: "naanị aha mmadụ", C: "naanị ebe", D: "agba ihe" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 18,
+    question: "N'asụsụ Igbo, isiokwu ahịrịokwu na-egosikarị __.",
+    options: { A: "onye ma ọ bụ ihe a na-ekwu maka ya", B: "ebe a na-ere ahịa", C: "ụdị uwe", D: "aha obodo naanị" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  // Edụmede Ilu (19-25)
+  {
+    id: 19,
+    question: "Ilu bụ okwu __.",
+    options: { A: "amamihe", B: "egwu", C: "iwe", D: "agha" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 20,
+    question: "'Onye kwe, chi ya ekwe' na-akụzi __.",
+    options: { A: "umengwụ", B: "ịgba mbọ", C: "izu ohi", D: "ịgha ụgha" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 21,
+    question: "'Aka nri kwoo aka ekpe...' na-akụzi __.",
+    options: { A: "ịkpọ asị", B: "enyemaka na ịdị n'otu", C: "ịlụ ọgụ", D: "ịgba ọsọ" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 22,
+    question: "Ilu na-enyere mmadụ aka inwe __.",
+    options: { A: "amamihe", B: "umengwụ", C: "iwe", D: "egwu" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 23,
+    question: "Onye na-eji ilu ekwu okwu na-egosi na ọ nwere __.",
+    options: { A: "amaghị ihe", B: "amamihe", C: "iwe", D: "ụjọ" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 24,
+    question: "Kedu ihe bụ uru ilu?",
+    options: { A: "Ime ka asụsụ maa mma", B: "Ime ka mmadụ chefuo asụsụ ya", C: "Ịkpata esemokwu", D: "Ịkụziri mmadụ izu ohi" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 25,
+    question: "Ilu bụ akụkụ dị mkpa nke __.",
+    options: { A: "omenala na ọdịnala ndị Igbo", B: "egwuregwu bọọlụ", C: "ọrụ ugbo", D: "ịzụ ahịa" },
+    correctAnswer: "A",
+    marks: 1
+  }
+];
+
+const ss2MathQuestions = [
+  {
+    id: 1,
+    question: "Find the gradient of the line joining the points (2,3) and (6,11).",
+    options: { A: "1", B: "2", C: "3", D: "4" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 2,
+    question: "Determine the y–intercept of the line \\(y = 3x + 5\\).",
+    options: { A: "3", B: "5", C: "–3", D: "–5" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 3,
+    question: "The angle between a tangent and the radius at the point of contact is:",
+    options: { A: "45°", B: "60°", C: "90°", D: "180°" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 4,
+    question: "The angle in a semicircle is always:",
+    options: { A: "45°", B: "60°", C: "90°", D: "120°" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 5,
+    question: "If the angle at the centre of a circle is 100°, the angle at the circumference on the same arc is:",
+    options: { A: "25°", B: "50°", C: "100°", D: "200°" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 6,
+    question: "Equal chords of a circle:",
+    options: { A: "Have equal lengths", B: "Pass through the centre", C: "Form right angles", D: "Form triangles" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 7,
+    question: "Angles in the same segment of a circle are:",
+    options: { A: "Complementary", B: "Equal", C: "Supplementary", D: "Different" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 8,
+    question: "Opposite angles of a cyclic quadrilateral are:",
+    options: { A: "Equal", B: "Complementary", C: "Supplementary", D: "Right angles" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 9,
+    question: "In a right–angled triangle with sides 6 and 8, find the hypotenuse.",
+    options: { A: "7", B: "8", C: "10", D: "12" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 10,
+    question: "The sine rule states that:",
+    options: {
+      A: "\\(a+b+c = 180°\\)",
+      B: "\\(a^2+b^2=c^2\\)",
+      C: "\\(\\frac{a}{\\sin A} = \\frac{b}{\\sin B} = \\frac{c}{\\sin C}\\)",
+      D: "\\(\\sin A + \\cos B = 1\\)"
+    },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 11,
+    question: "A ladder 10 m long leans against a wall making an angle of 30° with the ground. The height reached on the wall is:",
+    options: { A: "3 m", B: "5 m", C: "7 m", D: "9 m" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 12,
+    question: "In a right–angled triangle, if opposite side = 5 and hypotenuse = 13, then \\(\\sin \\theta\\) is:",
+    options: { A: "5/13", B: "13/5", C: "12/13", D: "13/12" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 13,
+    question: "Simplify \\(\\frac{3}{4} + \\frac{5}{8}\\).",
+    options: { A: "1/8", B: "9/8", C: "11/8", D: "13/8" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 14,
+    question: "Simplify \\(\\frac{2}{3} \\div \\frac{4}{5}\\).",
+    options: { A: "5/6", B: "8/15", C: "10/12", D: "15/8" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 15,
+    question: "Find the equation of the line with gradient 2 passing through the point (0,3).",
+    options: { A: "\\(y = 2x + 3\\)", B: "\\(y = x + 3\\)", C: "\\(y = 3x + 2\\)", D: "\\(y = 2x - 3\\)" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 16,
+    question: "If two chords in a circle are equal, they are:",
+    options: { A: "Equal in length", B: "Parallel", C: "Perpendicular", D: "Tangent" },
+    correctAnswer: "A",
+    marks: 1
+  },
+  {
+    id: 17,
+    question: "In a cyclic quadrilateral, if one angle is 70°, the opposite angle is:",
+    options: { A: "70°", B: "90°", C: "110°", D: "120°" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 18,
+    question: "Simplify \\(\\frac{5}{6} - \\frac{1}{3}\\).",
+    options: { A: "1/6", B: "1/2", C: "2/3", D: "4/6" },
+    correctAnswer: "B",
+    marks: 1
+  },
+  {
+    id: 19,
+    question: "The angle of elevation from a point on the ground to the top of a tower is 45°. If the distance from the point to the base is 20 m, the height of the tower is:",
+    options: { A: "10 m", B: "15 m", C: "20 m", D: "25 m" },
+    correctAnswer: "C",
+    marks: 1
+  },
+  {
+    id: 20,
+    question: "The gradient of a horizontal line is:",
+    options: { A: "0", B: "1", C: "–1", D: "Undefined" },
+    correctAnswer: "A",
+    marks: 1
+  }
+];
+
+// --- 2. ASSEMBLE EXAMS ARRAY ---
+
+const immaculateExams = [
+  {
+    id: "exam_immac_ss2_math",
+    title: "SS2 Mathematics 1st Term Examination",
+    subject: "Mathematics",
+    classLevel: "SS 2",
+    session: "2026/2027",
+    term: "1st Term",
+    durationMinutes: 90,
+    passPercentage: 40,
+    instructions: "Answer all 20 objective questions carefully. Each question carries equal marks.",
+    questions: ss2MathQuestions
+  },
+  {
+    id: "exam_immac_ss1_agric",
+    title: "SS1 Agricultural Science 1st Term Examination",
+    subject: "Agricultural Science",
+    classLevel: "SS 1",
+    session: "2026/2027",
+    term: "1st Term",
+    durationMinutes: 90,
+    passPercentage: 40,
+    instructions: "Section A: 20 objective questions. Section B: 5 theory questions.",
+    questions: ss1AgricQuestions
+  },
+  {
+    id: "exam_immac_ss2_agric",
+    title: "SS2 Agricultural Science 1st Term Examination",
+    subject: "Agricultural Science",
+    classLevel: "SS 2",
+    session: "2026/2027",
+    term: "1st Term",
+    durationMinutes: 90,
+    passPercentage: 40,
+    instructions: "Section A: 20 objective questions. Section B: 5 theory questions.",
+    questions: ss2AgricQuestions
+  },
+  {
+    id: "exam_immac_ss3_agric",
+    title: "SS3 Agricultural Science 1st Term Examination",
+    subject: "Agricultural Science",
+    classLevel: "SS 3",
+    session: "2026/2027",
+    term: "1st Term",
+    durationMinutes: 90,
+    passPercentage: 40,
+    instructions: "Section A: 20 objective questions. Section B: 5 theory questions.",
+    questions: ss3AgricQuestions
+  },
+  {
+    id: "exam_immac_ss3_chem",
+    title: "SS3 Chemistry 1st Term Examination",
+    subject: "Chemistry",
+    classLevel: "SS 3",
+    session: "2026/2027",
+    term: "1st Term",
+    durationMinutes: 90,
+    passPercentage: 40,
+    instructions: "Section A: 20 objective questions. Section B: 6 theory questions.",
+    questions: ss3ChemistryQuestions
+  },
+  {
+    id: "exam_immac_ss2_bio",
+    title: "SS2 Biology 1st Term Examination",
+    subject: "Biology",
+    classLevel: "SS 2",
+    session: "2026/2027",
+    term: "1st Term",
+    durationMinutes: 90,
+    passPercentage: 40,
+    instructions: "Section A: 20 objective questions. Section B: 6 theory questions.",
+    questions: ss2BiologyQuestions
+  },
+  {
+    id: "exam_immac_ss2_igbo",
+    title: "SS2 Igbo Language 1st Term Examination",
+    subject: "Igbo Language",
+    classLevel: "SS 2",
+    session: "2026/2027",
+    term: "1st Term",
+    durationMinutes: 120,
+    passPercentage: 40,
+    instructions: "Akụkụ A: Agụmagụ nghọta (ajụjụ 1-5) na Ajụjụ nhọrọ (ajụjụ 6-25). Akụkụ B: Edemede ilu.",
+    questions: ss2IgboQuestions
+  }
+];
+
+// --- 3. REGISTER IMMACULATE COMPREHENSIVE SECONDARY SCHOOL ---
+
+async function run() {
+  console.log("=================================================");
+  console.log(" REGISTERING IMMACULATE COMPREHENSIVE SECONDARY SCHOOL");
+  console.log("=================================================");
+
+  const schoolData = {
+    name: "IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU",
+    code: "immaculate",
+    motto: "48 Ochi Street, Achara Layout, Enugu",
+    primaryColor: "#1e3a8a",
+    accentColor: "#d97706",
+    logo: "", // Default clean crest
+    students: [],
+    exams: immaculateExams
+  };
+
+  // 1. Save to custom school registry
+  const savedSchool = db.saveSchoolToRegistry(schoolData);
+  console.log(`[OK] Saved school "${savedSchool.name}" with code "${savedSchool.code}"`);
+  console.log(`[OK] Exam bank populated with ${immaculateExams.length} complete subjects.`);
+
+  // 2. Activate school
+  await db.syncSchoolFromCothi('immaculate');
+  console.log(`[OK] Switched active school to "immaculate"`);
+
+  // 3. Set Active Exam to SS2 Mathematics (can be switched anytime)
+  db.saveSettings({
+    activeExamId: "exam_immac_ss2_math",
+    activeSession: "2026/2027",
+    activeTerm: "1st Term"
+  });
+  console.log(`[OK] Set active exam to "SS2 Mathematics 1st Term Examination"`);
+
+  // 4. Push to COTHI Cloud
+  try {
+    console.log(`[COTHI CLOUD] Uploading Immaculate school & question banks to cbtbycothi.com.ng...`);
+    await cothiCloud.pushSchoolToCloud(savedSchool);
+    console.log(`[OK] Successfully pushed Immaculate to COTHI Central Cloud!`);
+  } catch (cloudErr) {
+    console.log(`[NOTICE] Cloud sync notice: ${cloudErr.message}`);
+  }
+
+  // 5. Sync client configurations
+  const settings = db.getSettings();
+  const cfg = {
+    serverUrl: "http://localhost:8000",
+    supervisorExitPin: "9999",
+    school: {
+      name: settings.schoolName,
+      motto: settings.schoolMotto || "",
+      code: settings.schoolCode,
+      logo: settings.schoolLogo || "",
+      primaryColor: settings.primaryColor,
+      accentColor: settings.accentColor
+    }
+  };
+
+  const clientPaths = [
+    'student-electron-app/config.json',
+    'COTHI-Student-App/config.json',
+    'COTHI-Student-App/resources/app/config.json'
+  ];
+
+  clientPaths.forEach(cp => {
+    const full = path.join(__dirname, '..', cp);
+    try {
+      if (fs.existsSync(path.dirname(full))) {
+        fs.writeFileSync(full, JSON.stringify(cfg, null, 2), 'utf-8');
+        console.log(`[OK] Synced config to ${cp}`);
+      }
+    } catch (_) {}
+  });
+
+  console.log("=================================================");
+  console.log(" ✅ IMMACULATE COMPREHENSIVE SECONDARY SCHOOL IS READY!");
+  console.log("=================================================");
+}
+
+run().catch(err => {
+  console.error(err);
+  process.exit(1);
+});
