@@ -74,6 +74,12 @@ async function checkServerConnection() {
     if (data.branding) {
       applySchoolBranding(data.branding);
     }
+    const session = (data.activeExam && data.activeExam.session) || data.activeSession || (data.branding && data.branding.activeSession) || '2026/2027';
+    const term = (data.activeExam && data.activeExam.term) || data.activeTerm || (data.branding && data.branding.activeTerm) || '1st Term';
+    const sessBadge = document.getElementById('cardSessionBadge');
+    if (sessBadge) {
+      sessBadge.textContent = `📅 ${session} Academic Session • ${term}`;
+    }
     const reg = document.getElementById('selfRegisterSection');
     if (reg) reg.style.display = data.allowSelfRegister ? 'block' : 'none';
     connectStudentLiveEvents();
@@ -191,23 +197,34 @@ function applySchoolBranding(branding) {
     const cardEl = document.getElementById('cardSchoolMotto');
     if (cardEl) cardEl.textContent = motto;
   }
-  const logo = branding.schoolLogo || branding.logo;
-  if (logo) {
-    const logoImg = document.getElementById('kioskSchoolLogo');
-    if (logoImg) { logoImg.src = logo; logoImg.style.display = 'block'; }
-    const fallback = document.getElementById('kioskLogoFallback');
-    if (fallback) fallback.style.display = 'none';
+  const logo = (branding.schoolLogo || branding.logo || '').trim();
+  const logoImg = document.getElementById('kioskSchoolLogo');
+  const fallback = document.getElementById('kioskLogoFallback');
+  const cardLogoImg = document.getElementById('cardSchoolLogo');
+  const cardFallback = document.getElementById('cardLogoFallback');
 
-    const cardLogoImg = document.getElementById('cardSchoolLogo');
+  if (logo) {
+    if (logoImg) { logoImg.src = logo; logoImg.style.display = 'block'; }
+    if (fallback) fallback.style.display = 'none';
     if (cardLogoImg) { cardLogoImg.src = logo; cardLogoImg.style.display = 'block'; }
-    const cardFallback = document.getElementById('cardLogoFallback');
     if (cardFallback) cardFallback.style.display = 'none';
+  } else {
+    if (logoImg) { logoImg.src = ''; logoImg.style.display = 'none'; }
+    if (fallback) fallback.style.display = 'block';
+    if (cardLogoImg) { cardLogoImg.src = ''; cardLogoImg.style.display = 'none'; }
+    if (cardFallback) cardFallback.style.display = 'block';
   }
   if (branding.primaryColor) {
     document.documentElement.style.setProperty('--primary', branding.primaryColor);
   }
   if (branding.accentColor) {
     document.documentElement.style.setProperty('--accent', branding.accentColor);
+  }
+  const sess = branding.activeSession || branding.session;
+  const trm = branding.activeTerm || branding.term;
+  if (sess || trm) {
+    const badge = document.getElementById('cardSessionBadge');
+    if (badge) badge.textContent = `📅 ${sess || '2026/2027'} Academic Session • ${trm || '1st Term'}`;
   }
 }
 
@@ -236,7 +253,6 @@ function connectStudentLiveEvents() {
   } catch (e) {}
 }
 
-// 2. Candidate Login
 async function fetchStudentNextReg() {
   const regEl = document.getElementById('regRegNoInput');
   if (!regEl) return;
@@ -249,6 +265,7 @@ async function fetchStudentNextReg() {
   } catch (e) {}
 }
 
+// 2. Candidate Login
 function toggleRegisterForm() {
   const f = document.getElementById('registerForm');
   if (f) {
@@ -341,8 +358,14 @@ async function handleKioskLogin(e) {
     document.getElementById('bioRegNo').textContent = currentStudent.regNo;
     document.getElementById('bioClass').textContent = currentStudent.classLevel;
     (function(){ const ph=document.getElementById('bioPhoto'); if(ph){ if(currentStudent.photo){ ph.src=currentStudent.photo; ph.style.display='block'; } else { ph.style.display='none'; ph.removeAttribute('src'); } } })();
-    const sessionTerm = (currentExam.session ? currentExam.session + ' • ' : '') + (currentExam.term || '');
-    document.getElementById('bioSubject').textContent = currentExam.title + (sessionTerm ? ` (${sessionTerm})` : '');
+    const sessionVal = currentExam.session || '2026/2027';
+    const termVal = currentExam.term || '1st Term';
+    const sessionTerm = `${sessionVal} • ${termVal}`;
+    document.getElementById('bioSubject').textContent = currentExam.title + ` (${sessionTerm})`;
+    const bSess = document.getElementById('bioSession');
+    if (bSess) bSess.textContent = sessionVal;
+    const bTerm = document.getElementById('bioTerm');
+    if (bTerm) bTerm.textContent = termVal;
     document.getElementById('bioDuration').textContent = `${currentExam.durationMinutes} Minutes`;
     document.getElementById('bioTotalQ').textContent = `${currentExam.totalQuestions} Questions`;
 
@@ -936,6 +959,10 @@ function showReceiptView(name, regNo, examTitle, receipt) {
   document.getElementById('recName').textContent = name || (currentStudent && currentStudent.name) || '';
   document.getElementById('recRegNo').textContent = regNo || (currentStudent && currentStudent.regNo) || '';
   document.getElementById('recExam').textContent = examTitle || (currentExam && currentExam.title) || '';
+  const recSessionEl = document.getElementById('recSession');
+  if (recSessionEl) recSessionEl.textContent = (currentExam && currentExam.session) || '2026/2027';
+  const recTermEl = document.getElementById('recTerm');
+  if (recTermEl) recTermEl.textContent = (currentExam && currentExam.term) || '1st Term';
   document.getElementById('recTime').textContent = new Date((receipt && receipt.submittedAt) || Date.now()).toLocaleTimeString();
   document.getElementById('recId').textContent = (receipt && receipt.submissionId) || 'RECEIVED';
 

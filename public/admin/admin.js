@@ -848,7 +848,8 @@ async function initAdmin() {
 
     if (data.activeExam) {
       currentActiveExam = data.activeExam;
-      document.getElementById('topActiveExamTitle').textContent = data.activeExam.title;
+      const sessTerm = (data.activeExam.session ? data.activeExam.session + ' • ' : '') + (data.activeExam.term || '');
+      document.getElementById('topActiveExamTitle').textContent = `${data.activeExam.title} [${sessTerm || '2026/2027 • 1st Term'}]`;
     } else {
       document.getElementById('topActiveExamTitle').textContent = 'No Exam Active';
     }
@@ -1668,7 +1669,7 @@ async function saveAndDeployExam() {
   const classLevel = document.getElementById('newExamClass').value.trim();
   const duration = parseInt(document.getElementById('newExamDuration').value) || 45;
   const pass = parseInt(document.getElementById('newExamPass').value) || 50;
-  const session = document.getElementById('newExamSession') ? document.getElementById('newExamSession').value : '2025/2026';
+  const session = document.getElementById('newExamSession') ? document.getElementById('newExamSession').value : '2026/2027';
   const term = document.getElementById('newExamTerm') ? document.getElementById('newExamTerm').value : '1st Term';
   const instructions = document.getElementById('newExamInstructions').value.trim();
   const examDate = document.getElementById('newExamDate') ? document.getElementById('newExamDate').value : '';
@@ -1997,7 +1998,7 @@ async function fetchExamsList() {
     window._examsCache = exams;
     tbody.innerHTML = exams.map(ex => {
       const isActive = ex.id === activeId;
-      const session = ex.session || '2025/2026';
+      const session = ex.session || '2026/2027';
       const term = ex.term || '1st Term';
       const qCount = ex.questions ? ex.questions.length : 0;
 
@@ -2362,7 +2363,7 @@ function renderResultsTable() {
         <td><strong>${r.studentName}</strong></td>
         <td><span class="badge-tag">${r.classLevel || 'SS 2'}</span></td>
         <td>${r.subject || r.examTitle}</td>
-        <td><small>${r.session || '2025/2026'} • ${r.term || '1st Term'}</small></td>
+        <td><small>${r.session || '2026/2027'} • ${r.term || '1st Term'}</small></td>
         <td><strong>${r.score}</strong> / ${r.totalMarks}</td>
         <td><strong style="color:${g.color};">${r.percentage}%</strong></td>
         <td>
@@ -2437,7 +2438,7 @@ function printIndividualResultSlip(subId) {
           <h1 class="school-name">${branding.schoolName}</h1>
           <div class="school-motto">${branding.schoolMotto || 'Official Computer Based Test Center'}</div>
           <div><span class="slip-title">Official Examination Result Slip</span></div>
-          <div class="term-badge">${r.session || '2025/2026'} Academic Session • ${r.term || '1st Term'}</div>
+          <div class="term-badge">${r.session || '2026/2027'} Academic Session • ${r.term || '1st Term'}</div>
         </div>
 
         <div class="bio-grid">
@@ -2606,7 +2607,7 @@ function printClassBroadsheet() {
   const ranked = [...filtered].sort((a, b) => b.percentage - a.percentage);
 
   const branding = currentBranding || { schoolName: 'COTHIGLOBAL Examination Center', schoolMotto: 'Excellence in CBT Assessment' };
-  const sessionText = fSession !== 'ALL' ? fSession : (ranked[0].session || '2025/2026');
+  const sessionText = fSession !== 'ALL' ? fSession : (ranked[0].session || '2026/2027');
   const termText = fTerm !== 'ALL' ? fTerm : (ranked[0].term || '1st Term');
   const subjectText = fSubject !== 'ALL' ? fSubject : (ranked[0].subject || 'All Subjects');
   const classText = fClass !== 'ALL' ? fClass : (ranked[0].classLevel || 'All Classes');
@@ -2748,7 +2749,7 @@ function exportResultsCSV() {
       let csv = 'RegNo,CandidateName,Class,Subject,Session,Term,Score,TotalMarks,Percentage,Grade,Status,SubmittedAt,ReceiptID\n';
       results.forEach(r => {
         const g = getGradeLetter(r.percentage);
-        csv += `"${r.regNo}","${r.studentName}","${r.classLevel || ''}","${r.subject || r.examTitle}","${r.session || '2025/2026'}","${r.term || '1st Term'}","${r.score}","${r.totalMarks}","${r.percentage}%","${g.grade}","${r.passed ? 'PASS' : 'FAIL'}","${r.submittedAt}","${r.submissionId}"\n`;
+        csv += `"${r.regNo}","${r.studentName}","${r.classLevel || ''}","${r.subject || r.examTitle}","${r.session || '2026/2027'}","${r.term || '1st Term'}","${r.score}","${r.totalMarks}","${r.percentage}%","${g.grade}","${r.passed ? 'PASS' : 'FAIL'}","${r.submittedAt}","${r.submissionId}"\n`;
       });
 
       const blob = new Blob([csv], { type: 'text/csv' });

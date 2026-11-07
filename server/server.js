@@ -180,20 +180,24 @@ const server = http.createServer(async (req, res) => {
       studentUrl: `http://${ips.length > 0 ? ips[0].ip : 'localhost'}:${PORT}/student/`,
       allowSelfRegister: settings.allowSelfRegister === true,
       autoCloudSync: settings.autoCloudSync === true,
+      activeSession: settings.activeSession || (activeExam && activeExam.session) || '2026/2027',
+      activeTerm: settings.activeTerm || (activeExam && activeExam.term) || '1st Term',
       branding: {
         schoolName: settings.schoolName,
         schoolMotto: settings.schoolMotto,
         schoolCode: settings.schoolCode,
         primaryColor: settings.primaryColor,
         accentColor: settings.accentColor,
-        schoolLogo: settings.schoolLogo
+        schoolLogo: settings.schoolLogo,
+        activeSession: settings.activeSession || (activeExam && activeExam.session) || '2026/2027',
+        activeTerm: settings.activeTerm || (activeExam && activeExam.term) || '1st Term'
       },
       activeExam: activeExam ? {
         id: activeExam.id,
         title: activeExam.title,
         subject: activeExam.subject,
         classLevel: activeExam.classLevel,
-        session: activeExam.session || settings.activeSession || '2025/2026',
+        session: activeExam.session || settings.activeSession || '2026/2027',
         term: activeExam.term || settings.activeTerm || '1st Term',
         durationMinutes: activeExam.durationMinutes,
         totalQuestions: activeExam.questions.length
@@ -410,7 +414,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST') {
       const body = await parseBody(req);
       const settings = db.getSettings();
-      if (!body.session) body.session = settings.activeSession || '2025/2026';
+      if (!body.session) body.session = settings.activeSession || '2026/2027';
       if (!body.term) body.term = settings.activeTerm || '1st Term';
       const exam = db.saveExam(body);
       broadcastEvent('exam_saved', exam);
@@ -426,7 +430,7 @@ const server = http.createServer(async (req, res) => {
     if (!exam) {
       return sendJSON(res, 404, { success: false, message: 'Exam not found' });
     }
-    const session = (body.session || exam.session || db.getSettings().activeSession || '2025/2026').trim();
+    const session = (body.session || exam.session || db.getSettings().activeSession || '2026/2027').trim();
     const term = (body.term || exam.term || db.getSettings().activeTerm || '1st Term').trim();
 
     exam.session = session;
@@ -478,7 +482,7 @@ const server = http.createServer(async (req, res) => {
       const imported = db.importCothiExam(body.cothiExamId);
       const settings = db.getSettings();
       if (body.session) imported.session = body.session.trim();
-      else if (!imported.session) imported.session = settings.activeSession || '2025/2026';
+      else if (!imported.session) imported.session = settings.activeSession || '2026/2027';
 
       if (body.term) imported.term = body.term.trim();
       else if (!imported.term) imported.term = settings.activeTerm || '1st Term';
@@ -575,7 +579,7 @@ const server = http.createServer(async (req, res) => {
       submissionId: 'SUB-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
       regNo: student.regNo, studentName: student.name, classLevel: student.classLevel,
       examId: exam.id, examTitle: exam.title, subject: exam.subject,
-      session: exam.session || db.getSettings().activeSession || '2025/2026',
+      session: exam.session || db.getSettings().activeSession || '2026/2027',
       term: exam.term || db.getSettings().activeTerm || '1st Term',
       score, totalMarks, percentage, passed, gradeBand: gradeBand(percentage),
       correctCount, wrongCount, unansweredCount, answers, attempts: 1, maxTrials: examMaxTrials(exam),
@@ -968,7 +972,7 @@ const server = http.createServer(async (req, res) => {
         title: activeExam.title,
         subject: activeExam.subject,
         classLevel: activeExam.classLevel,
-        session: activeExam.session || settings.activeSession || '2025/2026',
+        session: activeExam.session || settings.activeSession || '2026/2027',
         term: activeExam.term || settings.activeTerm || '1st Term',
         durationMinutes: activeExam.durationMinutes,
         instructions: activeExam.instructions,
@@ -1014,6 +1018,8 @@ const server = http.createServer(async (req, res) => {
     return sendJSON(res, 200, {
       examId: activeExam.id,
       title: activeExam.title,
+      session: activeExam.session || settings.activeSession || '2026/2027',
+      term: activeExam.term || settings.activeTerm || '1st Term',
       durationMinutes: activeExam.durationMinutes,
       questions: sanitizedQuestions,
       passages: passages
@@ -1120,7 +1126,7 @@ const server = http.createServer(async (req, res) => {
       examId: exam.id,
       examTitle: exam.title,
       subject: exam.subject,
-      session: exam.session || db.getSettings().activeSession || '2025/2026',
+      session: exam.session || db.getSettings().activeSession || '2026/2027',
       term: exam.term || db.getSettings().activeTerm || '1st Term',
       score: keep.score,
       totalMarks: keep.totalMarks,
@@ -1255,7 +1261,7 @@ function activePayloadFor(exam) {
     title: exam.title,
     subject: exam.subject,
     classLevel: exam.classLevel,
-    session: exam.session || settings.activeSession || '2025/2026',
+    session: exam.session || settings.activeSession || '2026/2027',
     term: exam.term || settings.activeTerm || '1st Term',
     durationMinutes: exam.durationMinutes,
     totalQuestions: (exam.questions || []).length

@@ -1,7 +1,7 @@
 [
   {
     "id": "exam_immac_ss2_math",
-    "title": "SS2 Mathematics 1st Term Examination",
+    "title": "SS2 Mathematics — 2026/2027 Session (1st Term)",
     "subject": "Mathematics",
     "classLevel": "SS 2",
     "session": "2026/2027",
@@ -254,7 +254,7 @@
   },
   {
     "id": "exam_immac_ss1_agric",
-    "title": "SS1 Agricultural Science 1st Term Examination",
+    "title": "SS1 Agricultural Science — 2026/2027 Session (1st Term)",
     "subject": "Agricultural Science",
     "classLevel": "SS 1",
     "session": "2026/2027",
@@ -507,7 +507,7 @@
   },
   {
     "id": "exam_immac_ss2_agric",
-    "title": "SS2 Agricultural Science 1st Term Examination",
+    "title": "SS2 Agricultural Science — 2026/2027 Session (1st Term)",
     "subject": "Agricultural Science",
     "classLevel": "SS 2",
     "session": "2026/2027",
@@ -760,7 +760,7 @@
   },
   {
     "id": "exam_immac_ss3_agric",
-    "title": "SS3 Agricultural Science 1st Term Examination",
+    "title": "SS3 Agricultural Science — 2026/2027 Session (1st Term)",
     "subject": "Agricultural Science",
     "classLevel": "SS 3",
     "session": "2026/2027",
@@ -1013,7 +1013,7 @@
   },
   {
     "id": "exam_immac_ss3_chem",
-    "title": "SS3 Chemistry 1st Term Examination",
+    "title": "SS3 Chemistry — 2026/2027 Session (1st Term)",
     "subject": "Chemistry",
     "classLevel": "SS 3",
     "session": "2026/2027",
@@ -1266,7 +1266,7 @@
   },
   {
     "id": "exam_immac_ss2_bio",
-    "title": "SS2 Biology 1st Term Examination",
+    "title": "SS2 Biology — 2026/2027 Session (1st Term)",
     "subject": "Biology",
     "classLevel": "SS 2",
     "session": "2026/2027",
@@ -1519,7 +1519,7 @@
   },
   {
     "id": "exam_immac_ss2_igbo",
-    "title": "SS2 Igbo Language 1st Term Examination",
+    "title": "SS2 Igbo Language — 2026/2027 Session (1st Term)",
     "subject": "Igbo Language",
     "classLevel": "SS 2",
     "session": "2026/2027",

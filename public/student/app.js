@@ -74,6 +74,12 @@ async function checkServerConnection() {
     if (data.branding) {
       applySchoolBranding(data.branding);
     }
+    const session = (data.activeExam && data.activeExam.session) || data.activeSession || (data.branding && data.branding.activeSession) || '2026/2027';
+    const term = (data.activeExam && data.activeExam.term) || data.activeTerm || (data.branding && data.branding.activeTerm) || '1st Term';
+    const sessBadge = document.getElementById('cardSessionBadge');
+    if (sessBadge) {
+      sessBadge.textContent = `📅 ${session} Academic Session • ${term}`;
+    }
     const reg = document.getElementById('selfRegisterSection');
     if (reg) reg.style.display = data.allowSelfRegister ? 'block' : 'none';
     connectStudentLiveEvents();
@@ -214,6 +220,12 @@ function applySchoolBranding(branding) {
   if (branding.accentColor) {
     document.documentElement.style.setProperty('--accent', branding.accentColor);
   }
+  const sess = branding.activeSession || branding.session;
+  const trm = branding.activeTerm || branding.term;
+  if (sess || trm) {
+    const badge = document.getElementById('cardSessionBadge');
+    if (badge) badge.textContent = `📅 ${sess || '2026/2027'} Academic Session • ${trm || '1st Term'}`;
+  }
 }
 
 let studentEventSource = null;
@@ -346,8 +358,14 @@ async function handleKioskLogin(e) {
     document.getElementById('bioRegNo').textContent = currentStudent.regNo;
     document.getElementById('bioClass').textContent = currentStudent.classLevel;
     (function(){ const ph=document.getElementById('bioPhoto'); if(ph){ if(currentStudent.photo){ ph.src=currentStudent.photo; ph.style.display='block'; } else { ph.style.display='none'; ph.removeAttribute('src'); } } })();
-    const sessionTerm = (currentExam.session ? currentExam.session + ' • ' : '') + (currentExam.term || '');
-    document.getElementById('bioSubject').textContent = currentExam.title + (sessionTerm ? ` (${sessionTerm})` : '');
+    const sessionVal = currentExam.session || '2026/2027';
+    const termVal = currentExam.term || '1st Term';
+    const sessionTerm = `${sessionVal} • ${termVal}`;
+    document.getElementById('bioSubject').textContent = currentExam.title + ` (${sessionTerm})`;
+    const bSess = document.getElementById('bioSession');
+    if (bSess) bSess.textContent = sessionVal;
+    const bTerm = document.getElementById('bioTerm');
+    if (bTerm) bTerm.textContent = termVal;
     document.getElementById('bioDuration').textContent = `${currentExam.durationMinutes} Minutes`;
     document.getElementById('bioTotalQ').textContent = `${currentExam.totalQuestions} Questions`;
 
@@ -941,6 +959,10 @@ function showReceiptView(name, regNo, examTitle, receipt) {
   document.getElementById('recName').textContent = name || (currentStudent && currentStudent.name) || '';
   document.getElementById('recRegNo').textContent = regNo || (currentStudent && currentStudent.regNo) || '';
   document.getElementById('recExam').textContent = examTitle || (currentExam && currentExam.title) || '';
+  const recSessionEl = document.getElementById('recSession');
+  if (recSessionEl) recSessionEl.textContent = (currentExam && currentExam.session) || '2026/2027';
+  const recTermEl = document.getElementById('recTerm');
+  if (recTermEl) recTermEl.textContent = (currentExam && currentExam.term) || '1st Term';
   document.getElementById('recTime').textContent = new Date((receipt && receipt.submittedAt) || Date.now()).toLocaleTimeString();
   document.getElementById('recId').textContent = (receipt && receipt.submissionId) || 'RECEIVED';
 
