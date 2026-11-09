@@ -126,7 +126,7 @@ async function fetchRawCloudData() {
   return await fetchFromEndpoint('66.235.174.177', 'cbtbycothi.com.ng');
 }
 
-const IGNORED_TEST_CODES = new Set(['f', 'dd', 'w', 'h', 'kk', 'excel_enugu', 'central', 'kingskid', 'cothi', 'anchor']);
+const IGNORED_TEST_CODES = new Set(['f', 'dd', 'w', 'h', 'kk', 'central', 'kingskid', 'cothi', 'anchor']);
 
 function parseCloudPayload(cloud) {
   let reg1 = [];

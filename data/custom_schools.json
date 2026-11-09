@@ -5722,5 +5722,55 @@
       }
     ],
     "updatedAt": "2026-11-07T08:30:57.945Z"
+  },
+  {
+    "code": "excel_enugu",
+    "id": "school_excel_enugu",
+    "name": "Excel Royal Academy (Enugu)",
+    "motto": "Nation Transformers - Enugu Campus",
+    "primaryColor": "#1D4ED8",
+    "accentColor": "#EFF6FF",
+    "logo": "https://school.excelroyalacademy.com.ng/uploads/images/763e00252bf277b62673cd557edd2ea40876ad4d9ff8ca48c486364022dfcc30b4e759383b1272499576a516b5ac6ae0fa2458d33c6a31c4fe3517b329877c94.jpg",
+    "students": [],
+    "exams": [
+      {
+        "id": "exam-excel_enugu-gen",
+        "title": "Excel Royal Academy (Enugu) General Knowledge & Aptitude CBT",
+        "subject": "General Knowledge",
+        "classLevel": "SS 2",
+        "durationMinutes": 40,
+        "passPercentage": 50,
+        "instructions": "Answer all questions carefully.",
+        "questions": [
+          {
+            "id": 1,
+            "question": "Which organelle is referred to as the powerhouse of the cell?",
+            "options": {
+              "A": "Ribosome",
+              "B": "Mitochondria",
+              "C": "Golgi apparatus",
+              "D": "Nucleus"
+            },
+            "correctAnswer": "B",
+            "marks": 5
+          },
+          {
+            "id": 2,
+            "question": "Solve the linear equation: 3x - 7 = 14",
+            "options": {
+              "A": "x = 5",
+              "B": "x = 7",
+              "C": "x = 6",
+              "D": "x = 8"
+            },
+            "correctAnswer": "B",
+            "marks": 5
+          }
+        ],
+        "schoolCode": "excel_enugu",
+        "schoolId": "excel_enugu",
+        "schoolName": "Excel Royal Academy (Enugu)"
+      }
+    ]
   }
 ]

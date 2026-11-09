@@ -37,7 +37,19 @@ async function initApp() {
 
       // Listen for LAN Auto-Discovery
       window.cbtAPI.onServerDiscovered((payload) => {
-        console.log('LAN Auto-Discovery event:', payload);
+        // Anti-flapping: Do not disrupt active exam or logged-in student under any circumstance
+        if (currentStudent || currentExam) {
+          console.warn('Auto-discovery update ignored: student exam currently active.');
+          return;
+        }
+
+        // If already connected to this server, do not bounce UI
+        if (serverHost === payload.serverUrl) {
+          if (payload.school) applySchoolBranding(payload.school);
+          return;
+        }
+
+        console.log('LAN Auto-Discovery event accepted:', payload);
         if (payload.serverUrl) {
           serverHost = payload.serverUrl;
         }
@@ -46,8 +58,8 @@ async function initApp() {
         }
         const dot = document.getElementById('serverStatusDot');
         const label = document.getElementById('serverStatusLabel');
-        dot.className = 'status-indicator online';
-        label.textContent = `Auto-Detected: ${payload.school ? payload.school.name : new URL(serverHost).hostname}`;
+        if (dot) dot.className = 'status-indicator online';
+        if (label) label.textContent = `Auto-Detected: ${payload.school ? payload.school.name : new URL(serverHost).hostname}`;
       });
     } catch (e) {
       console.warn('Electron IPC config failed, using defaults');

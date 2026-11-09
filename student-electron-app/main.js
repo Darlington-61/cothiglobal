@@ -109,11 +109,93 @@ function writeConfig(data) {
 let mainWindow = null;
 let udpSocket = null;
 let discoveryInterval = null;
+let healthCheckInterval = null;
+let lockedServer = null; // { url, ip, port, schoolCode, lastSeen, failCount }
 
-// AUTO-DISCOVERY ON WI-FI / LAN
+function probeServerUrl(rawUrl, timeout = 1200) {
+  return new Promise((resolve) => {
+    try {
+      const u = new URL(rawUrl);
+      const port = parseInt(u.port, 10) || (u.protocol === 'https:' ? 443 : 80);
+      const req = http.get({
+        hostname: u.hostname,
+        port: port,
+        path: '/api/status',
+        timeout: timeout
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => { data += chunk; });
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(data);
+            if (json.status === 'online') {
+              resolve({ ok: true, branding: json.branding, activeExam: json.activeExam });
+              return;
+            }
+          } catch (e) {}
+          resolve({ ok: false });
+        });
+      });
+      req.on('error', () => resolve({ ok: false }));
+      req.on('timeout', () => { req.destroy(); resolve({ ok: false }); });
+    } catch (e) {
+      resolve({ ok: false });
+    }
+  });
+}
+
+function adoptAndLockServer(serverUrl, ip, port, school) {
+  const schoolCode = (school && school.code) ? String(school.code).toLowerCase().trim() : '';
+  lockedServer = {
+    url: serverUrl,
+    ip: ip,
+    port: port,
+    schoolCode: schoolCode,
+    lastSeen: Date.now(),
+    failCount: 0
+  };
+  console.log(`[DISCOVERY] Locked onto CBT Server: ${serverUrl} (${school ? school.name : 'Unknown'}) [${schoolCode}]`);
+
+  const currentCfg = readConfig();
+  currentCfg.serverUrl = serverUrl;
+  if (school) {
+    currentCfg.school = { ...(currentCfg.school || {}), ...school };
+  }
+  writeConfig(currentCfg);
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('server-discovered', {
+      serverUrl: serverUrl,
+      school: school
+    });
+  }
+}
+
+// AUTO-DISCOVERY ON WI-FI / LAN WITH ANTI-FLAPPING SERVER PINNING
 function startAutoDiscovery() {
   if (udpSocket) {
     try { udpSocket.close(); } catch (e) {}
+  }
+
+  // Pre-lock to existing configured server if alive
+  const initialCfg = readConfig();
+  if (initialCfg && initialCfg.serverUrl) {
+    probeServerUrl(initialCfg.serverUrl, 1500).then(res => {
+      if (res.ok) {
+        try {
+          const u = new URL(initialCfg.serverUrl);
+          lockedServer = {
+            url: initialCfg.serverUrl,
+            ip: u.hostname,
+            port: parseInt(u.port, 10) || 8000,
+            schoolCode: (initialCfg.school && initialCfg.school.code) ? String(initialCfg.school.code).toLowerCase().trim() : '',
+            lastSeen: Date.now(),
+            failCount: 0
+          };
+          console.log(`[DISCOVERY] Confirmed existing server is online & locked: ${lockedServer.url} (${lockedServer.schoolCode})`);
+        } catch (e) {}
+      }
+    });
   }
 
   udpSocket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
@@ -129,22 +211,49 @@ function startAutoDiscovery() {
         const discoveredIp = rinfo.address;
         const port = data.httpPort || 8000;
         const serverUrl = `http://${discoveredIp}:${port}`;
-
-        console.log(`[DISCOVERY] Found COTHI Server on LAN: ${serverUrl}`);
-
-        // Update local config
+        const incomingCode = (data.school && data.school.code) ? String(data.school.code).toLowerCase().trim() : '';
         const currentCfg = readConfig();
-        currentCfg.serverUrl = serverUrl;
-        if (data.school) currentCfg.school = { ...currentCfg.school, ...data.school };
-        writeConfig(currentCfg);
+        const preferredCode = (currentCfg.school && currentCfg.school.code) ? String(currentCfg.school.code).toLowerCase().trim() : '';
 
-        // Notify renderer
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('server-discovered', {
-            serverUrl: serverUrl,
-            school: data.school
-          });
+        // Case 1: Already locked to a server
+        if (lockedServer) {
+          const isSameServer = lockedServer.url === serverUrl || (lockedServer.ip === discoveredIp && lockedServer.port == port);
+
+          if (isSameServer) {
+            // Heartbeat refresh from our locked server
+            lockedServer.lastSeen = Date.now();
+            lockedServer.failCount = 0;
+            return;
+          }
+
+          // Competing server broadcast received!
+          // Priority Rule: If our locked server does NOT match the preferred school code,
+          // but this incoming beacon DOES match our preferred school code:
+          if (preferredCode && lockedServer.schoolCode !== preferredCode && incomingCode === preferredCode) {
+            console.log(`[DISCOVERY] Priority match! Switching from ${lockedServer.url} (${lockedServer.schoolCode}) to matching school server ${serverUrl} (${incomingCode})`);
+            adoptAndLockServer(serverUrl, discoveredIp, port, data.school);
+            return;
+          }
+
+          // If our current locked server is healthy (failCount < 3), IGNORE the foreign broadcast!
+          if (lockedServer.failCount < 3) {
+            // Silently discard competing server broadcast to prevent flapping
+            return;
+          }
+
+          // Otherwise, locked server has failed 3+ health checks. Allow adopting new active server.
+          console.log(`[DISCOVERY] Locked server ${lockedServer.url} is offline. Adopting failover server ${serverUrl} (${incomingCode})`);
+          adoptAndLockServer(serverUrl, discoveredIp, port, data.school);
+          return;
         }
+
+        // Case 2: Not currently locked to any server
+        // If we have a preferred school code and incoming does not match, ignore foreign school
+        if (preferredCode && incomingCode && incomingCode !== preferredCode) {
+          return;
+        }
+
+        adoptAndLockServer(serverUrl, discoveredIp, port, data.school);
       }
     } catch (e) {}
   });
@@ -155,11 +264,31 @@ function startAutoDiscovery() {
       sendDiscoveryPing();
 
       clearInterval(discoveryInterval);
-      discoveryInterval = setInterval(sendDiscoveryPing, 3000);
+      discoveryInterval = setInterval(sendDiscoveryPing, 4000);
     } catch (e) {
       console.warn('Failed to set broadcast flag:', e.message);
     }
   });
+
+  // Background health check monitor on the locked server (every 5 seconds)
+  clearInterval(healthCheckInterval);
+  healthCheckInterval = setInterval(async () => {
+    if (lockedServer && lockedServer.url) {
+      const res = await probeServerUrl(lockedServer.url, 1200);
+      if (res.ok) {
+        lockedServer.failCount = 0;
+        lockedServer.lastSeen = Date.now();
+      } else {
+        lockedServer.failCount = (lockedServer.failCount || 0) + 1;
+        if (lockedServer.failCount >= 3) {
+          console.warn(`[DISCOVERY] Locked server ${lockedServer.url} unresponsive (3 strikes). Unlocking for failover.`);
+          lockedServer = null;
+          // Trigger a ping to discover another server if available
+          sendDiscoveryPing();
+        }
+      }
+    }
+  }, 5000);
 }
 
 function sendDiscoveryPing() {
@@ -215,6 +344,7 @@ function createWindow() {
       try { udpSocket.close(); } catch (e) {}
     }
     clearInterval(discoveryInterval);
+    clearInterval(healthCheckInterval);
   });
 
   // Start LAN auto-discovery
@@ -223,7 +353,18 @@ function createWindow() {
 
 // IPC Handlers
 ipcMain.handle('get-config', () => readConfig());
-ipcMain.handle('save-config', (event, newConfig) => writeConfig(newConfig));
+ipcMain.handle('save-config', (event, newConfig) => {
+  writeConfig(newConfig);
+  if (newConfig && newConfig.serverUrl) {
+    try {
+      const u = new URL(newConfig.serverUrl);
+      const port = parseInt(u.port, 10) || (u.protocol === 'https:' ? 443 : 80);
+      adoptAndLockServer(newConfig.serverUrl, u.hostname, port, newConfig.school);
+      console.log(`[CONFIG] Supervisor manually pinned server to: ${newConfig.serverUrl}`);
+    } catch (e) {}
+  }
+  return true;
+});
 ipcMain.handle('discover-server', () => {
   sendDiscoveryPing();
   return { status: 'ping_sent' };
@@ -274,11 +415,11 @@ async function scanLocalSubnet() {
       const results = await Promise.all(promises);
       const found = results.find(r => r !== null);
       if (found) {
-        // Save found server to config
-        const currentCfg = readConfig();
-        currentCfg.serverUrl = found.serverUrl;
-        if (found.school) currentCfg.school = { ...currentCfg.school, ...found.school };
-        writeConfig(currentCfg);
+        try {
+          const u = new URL(found.serverUrl);
+          const port = parseInt(u.port, 10) || 8000;
+          adoptAndLockServer(found.serverUrl, u.hostname, port, found.school);
+        } catch (e) {}
         return found;
       }
     }
