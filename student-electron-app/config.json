@@ -1,5 +1,5 @@
 {
-  "serverUrl": "http://localhost:8000",
+  "serverUrl": "http://192.168.1.164:8000",
   "supervisorExitPin": "9999",
   "school": {
     "name": "IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU",
@@ -7,8 +7,6 @@
     "code": "immaculate",
     "logo": "",
     "primaryColor": "#1e3a8a",
-    "accentColor": "#d97706",
-    "session": "2026/2027",
-    "term": "1st Term"
+    "accentColor": "#d97706"
   }
 }

@@ -179,20 +179,22 @@ const db = {
 
   async syncSchoolFromCothi(schoolCode) {
     const cleanCode = (schoolCode || '').trim().toLowerCase();
+    const codesToMatch = [cleanCode];
+    if (cleanCode === 'immaculate') codesToMatch.push('icss');
+    if (cleanCode === 'icss') codesToMatch.push('immaculate');
+    if (cleanCode === 'godscare') codesToMatch.push('god');
+    if (cleanCode === 'god') codesToMatch.push('godscare');
+    if (cleanCode === 'excel_enugu') codesToMatch.push('excel', 'excel_royal');
 
     // Snapshot outgoing active school data so candidates and exams are never lost
     this.snapshotCurrentSchool();
 
     let schools = this.getCothiCentralSchools();
 
-    let found = schools.find(s => s.code && s.code.toLowerCase() === cleanCode);
+    let found = schools.find(s => codesToMatch.includes((s.code || '').toLowerCase()) || codesToMatch.includes((s.id || '').replace('school_', '').toLowerCase()));
 
     if (!found) {
-      found = schools.find(s => s.id && s.id.toLowerCase() === cleanCode);
-    }
-
-    if (!found) {
-      found = schools.find(s => s.name && s.name.toLowerCase().includes(cleanCode));
+      found = schools.find(s => s.name && codesToMatch.some(c => s.name.toLowerCase().includes(c)));
     }
 
     // If not found in local cache, attempt a live fetch from cbtbycothi.com.ng
@@ -201,9 +203,8 @@ const db = {
       try {
         const refreshResult = await cothiCloud.refreshSchoolsFromCloud();
         schools = this.getCothiCentralSchools();
-        found = schools.find(s => s.code && s.code.toLowerCase() === cleanCode)
-          || schools.find(s => s.id && s.id.toLowerCase() === cleanCode)
-          || schools.find(s => s.name && s.name.toLowerCase().includes(cleanCode));
+        found = schools.find(s => codesToMatch.includes((s.code || '').toLowerCase()) || codesToMatch.includes((s.id || '').replace('school_', '').toLowerCase()))
+          || schools.find(s => s.name && codesToMatch.some(c => s.name.toLowerCase().includes(c)));
       } catch (err) {
         console.warn('Live fetch failed during school sync:', err.message);
       }
@@ -214,7 +215,7 @@ const db = {
     }
 
     // Check if this school has local custom data
-    const customMatch = this.getCustomSchools().find(s => (s.code || '').toLowerCase() === cleanCode);
+    const customMatch = this.getCustomSchools().find(s => codesToMatch.includes((s.code || '').toLowerCase()));
     const studentsToUse = (customMatch && Array.isArray(customMatch.students))
       ? customMatch.students
       : (found.students || []);

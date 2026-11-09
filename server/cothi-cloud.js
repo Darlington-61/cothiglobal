@@ -64,9 +64,9 @@ function getAuthToken() {
   return 'mock-access-token';
 }
 
-function fetchFromEndpoint(host, servername) {
+function fetchFromEndpoint(host, servername, authToken) {
   return new Promise((resolve, reject) => {
-    const token = getAuthToken();
+    const token = authToken || getAuthToken();
     const options = {
       hostname: host,
       port: 443,
@@ -75,8 +75,8 @@ function fetchFromEndpoint(host, servername) {
       headers: {
         'Host': 'cbtbycothi.com.ng',
         'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json, text/plain, */*',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'Accept': '*/*',
+        'User-Agent': 'curl/8.4.0'
       },
       timeout: 60000
     };
@@ -85,15 +85,22 @@ function fetchFromEndpoint(host, servername) {
     }
 
     const req = https.request(options, (res) => {
+      // If server rejects custom token with 401 or 403, retry with universal mock-access-token
+      if ((res.statusCode === 401 || res.statusCode === 403) && token !== 'mock-access-token') {
+        console.log(`[COTHI CLOUD] Token rejected (HTTP ${res.statusCode}). Retrying with universal sync token...`);
+        fetchFromEndpoint(host, servername, 'mock-access-token').then(resolve).catch(reject);
+        return;
+      }
+
       if (res.statusCode !== 200) {
         reject(new Error(`COTHI central cloud returned HTTP ${res.statusCode}`));
         return;
       }
-      let data = '';
-      res.on('data', chunk => data += chunk);
+      let chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
       res.on('end', () => {
         try {
-          const parsed = JSON.parse(data);
+          const parsed = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
           resolve(parsed);
         } catch (e) {
           reject(new Error('Invalid response received from COTHI central cloud.'));
@@ -149,6 +156,42 @@ function parseCloudPayload(cloud) {
     }
   });
 
+  // Also harvest dynamically provisioned schools from activityLogs_school_* and classes_school_*
+  Object.keys(cloud).forEach(k => {
+    const m = k.match(/^activityLogs_school_([a-zA-Z0-9_-]+)/);
+    if (m) {
+      const rawCode = m[1].toLowerCase();
+      if (!IGNORED_TEST_CODES.has(rawCode)) {
+        let code = rawCode;
+        if (code === 'icss') code = 'immaculate';
+        if (code === 'god') code = 'godscare';
+
+        let schName = '';
+        try {
+          const logs = JSON.parse(cloud[k]);
+          const prov = logs.find(l => l.action && l.action.toLowerCase().includes('provisioned school:'));
+          if (prov) {
+            const mName = prov.action.match(/provisioned school:\s*(.+)/i);
+            if (mName) schName = mName[1].trim();
+          }
+        } catch(e) {}
+
+        const id = `school_${rawCode}`;
+        if (!schoolsMap.has(id)) {
+          schoolsMap.set(id, {
+            id: id,
+            code: code,
+            name: schName || (code === 'immaculate' ? 'IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU' : code.toUpperCase()),
+            motto: code === 'immaculate' ? '48 Ochi Street, Achara Layout, Enugu' : 'Excellence in Learning',
+            primaryColor: code === 'immaculate' ? '#1e3a8a' : '#2563eb',
+            accentColor: code === 'immaculate' ? '#d97706' : '#f8fafc',
+            logo: cloud[`logo_${id}`] || cloud[`logo_school_${code}`] || ''
+          });
+        }
+      }
+    }
+  });
+
   const parsedSchools = [];
 
   for (const [id, s] of schoolsMap.entries()) {
@@ -163,9 +206,22 @@ function parseCloudPayload(cloud) {
     // Real Students Harvester across all cloud sources for this school
     const schoolStudentsMap = new Map();
 
+    // Codes and IDs to match for this school (supports aliases like icss <-> immaculate, god <-> godscare)
+    const codesToMatch = [code];
+    if (code === 'immaculate') codesToMatch.push('icss');
+    if (code === 'icss') codesToMatch.push('immaculate');
+    if (code === 'godscare') codesToMatch.push('god');
+    if (code === 'god') codesToMatch.push('godscare');
+    if (code === 'excel') codesToMatch.push('excel_royal');
+    if (code === 'excel_enugu') codesToMatch.push('excel', 'excel_royal');
+
     // 1. Check students_registry
     allStudents
-      .filter(st => st.schoolId === id || (st.schoolCode && st.schoolCode.toLowerCase() === code))
+      .filter(st => {
+        const stSchId = (st.schoolId || '').toLowerCase().replace('school_', '');
+        const stSchCode = (st.schoolCode || '').toLowerCase();
+        return codesToMatch.some(c => stSchId === c || stSchCode === c || id === `school_${c}`);
+      })
       .forEach((st, idx) => {
         const reg = (st.username || st.regNo || `${code.toUpperCase()}/${new Date().getFullYear()}/${String(idx + 1).padStart(3, '0')}`).trim();
         schoolStudentsMap.set(reg.toLowerCase(), {
@@ -474,6 +530,8 @@ const cothiCloud = {
               'Host': 'cbtbycothi.com.ng',
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${token}`,
+              'Accept': '*/*',
+              'User-Agent': 'curl/8.4.0',
               'Content-Length': Buffer.byteLength(postData)
             },
             timeout: 20000
@@ -534,6 +592,8 @@ const cothiCloud = {
               'Host': 'cbtbycothi.com.ng',
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${token}`,
+              'Accept': '*/*',
+              'User-Agent': 'curl/8.4.0',
               'Content-Length': Buffer.byteLength(postData)
             },
             timeout: 15000
