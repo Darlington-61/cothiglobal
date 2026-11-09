@@ -250,7 +250,10 @@
         "correctAnswer": "A",
         "marks": 1
       }
-    ]
+    ],
+    "schoolCode": "immaculate",
+    "schoolId": "immaculate",
+    "schoolName": "IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU"
   },
   {
     "id": "exam_immac_ss1_agric",
@@ -503,7 +506,10 @@
         "correctAnswer": "A",
         "marks": 1
       }
-    ]
+    ],
+    "schoolCode": "immaculate",
+    "schoolId": "immaculate",
+    "schoolName": "IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU"
   },
   {
     "id": "exam_immac_ss2_agric",
@@ -756,7 +762,10 @@
         "correctAnswer": "A",
         "marks": 1
       }
-    ]
+    ],
+    "schoolCode": "immaculate",
+    "schoolId": "immaculate",
+    "schoolName": "IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU"
   },
   {
     "id": "exam_immac_ss3_agric",
@@ -1009,7 +1018,10 @@
         "correctAnswer": "A",
         "marks": 1
       }
-    ]
+    ],
+    "schoolCode": "immaculate",
+    "schoolId": "immaculate",
+    "schoolName": "IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU"
   },
   {
     "id": "exam_immac_ss3_chem",
@@ -1262,7 +1274,10 @@
         "correctAnswer": "B",
         "marks": 1
       }
-    ]
+    ],
+    "schoolCode": "immaculate",
+    "schoolId": "immaculate",
+    "schoolName": "IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU"
   },
   {
     "id": "exam_immac_ss2_bio",
@@ -1515,7 +1530,10 @@
         "correctAnswer": "B",
         "marks": 1
       }
-    ]
+    ],
+    "schoolCode": "immaculate",
+    "schoolId": "immaculate",
+    "schoolName": "IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU"
   },
   {
     "id": "exam_immac_ss2_igbo",
@@ -1828,6 +1846,9 @@
         "correctAnswer": "A",
         "marks": 1
       }
-    ]
+    ],
+    "schoolCode": "immaculate",
+    "schoolId": "immaculate",
+    "schoolName": "IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU"
   }
 ]

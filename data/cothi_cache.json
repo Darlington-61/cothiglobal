@@ -17,7 +17,10 @@
         "durationMinutes": 60,
         "passPercentage": 50,
         "instructions": "Answer all questions within the allocated time.",
-        "questions": []
+        "questions": [],
+        "schoolCode": "f",
+        "schoolId": "f",
+        "schoolName": "FF"
       }
     ]
   },
@@ -64,7 +67,10 @@
             "correctAnswer": "B",
             "marks": 5
           }
-        ]
+        ],
+        "schoolCode": "kk",
+        "schoolId": "kk",
+        "schoolName": "Kkicn"
       }
     ],
     "isCustom": true,
@@ -113,7 +119,10 @@
             "correctAnswer": "B",
             "marks": 5
           }
-        ]
+        ],
+        "schoolCode": "dd",
+        "schoolId": "dd",
+        "schoolName": "FF"
       }
     ]
   },
@@ -143,7 +152,10 @@
         "durationMinutes": 60,
         "passPercentage": 50,
         "instructions": "Answer all questions within the allocated time.",
-        "questions": []
+        "questions": [],
+        "schoolCode": "h",
+        "schoolId": "h",
+        "schoolName": "His Grace"
       }
     ]
   },
@@ -205,7 +217,10 @@
             "correctAnswer": "B",
             "marks": 5
           }
-        ]
+        ],
+        "schoolCode": "w",
+        "schoolId": "w",
+        "schoolName": "wwww"
       }
     ]
   },
@@ -433,7 +448,10 @@
             "correctAnswer": "A",
             "marks": 2.5
           }
-        ]
+        ],
+        "schoolCode": "k",
+        "schoolId": "k",
+        "schoolName": "KINGS KIDS"
       },
       {
         "id": "exam_mqtgkam8",
@@ -443,7 +461,10 @@
         "durationMinutes": 5,
         "passPercentage": 50,
         "instructions": "Answer all questions carefully.",
-        "questions": []
+        "questions": [],
+        "schoolCode": "k",
+        "schoolId": "k",
+        "schoolName": "KINGS KIDS"
       },
       {
         "id": "exam_mqw0nhns",
@@ -453,7 +474,10 @@
         "durationMinutes": 45,
         "passPercentage": 50,
         "instructions": "Answer all questions within the allocated time.",
-        "questions": []
+        "questions": [],
+        "schoolCode": "k",
+        "schoolId": "k",
+        "schoolName": "KINGS KIDS"
       }
     ]
   },
@@ -998,7 +1022,10 @@
           }
         ],
         "session": "2025/2026",
-        "term": "1st Term"
+        "term": "1st Term",
+        "schoolCode": "era",
+        "schoolId": "era",
+        "schoolName": "EXCEL ROYAL ACADEMY (AWKA)"
       },
       {
         "id": "exam_mqydckss",
@@ -1369,7 +1396,10 @@
             "correctAnswer": "A",
             "marks": 2.5
           }
-        ]
+        ],
+        "schoolCode": "era",
+        "schoolId": "era",
+        "schoolName": "EXCEL ROYAL ACADEMY (AWKA)"
       },
       {
         "id": "exam_mqyd8vfi",
@@ -1740,7 +1770,10 @@
             "correctAnswer": "B",
             "marks": 2.5
           }
-        ]
+        ],
+        "schoolCode": "era",
+        "schoolId": "era",
+        "schoolName": "EXCEL ROYAL ACADEMY (AWKA)"
       },
       {
         "id": "exam_mqyczuzl",
@@ -2111,7 +2144,10 @@
             "correctAnswer": "A",
             "marks": 2.5
           }
-        ]
+        ],
+        "schoolCode": "era",
+        "schoolId": "era",
+        "schoolName": "EXCEL ROYAL ACADEMY (AWKA)"
       },
       {
         "id": "exam_mqycp9ck",
@@ -2482,7 +2518,10 @@
             "correctAnswer": "A",
             "marks": 2.5
           }
-        ]
+        ],
+        "schoolCode": "era",
+        "schoolId": "era",
+        "schoolName": "EXCEL ROYAL ACADEMY (AWKA)"
       },
       {
         "id": "exam_mqwkedo3",
@@ -2973,7 +3012,10 @@
             "correctAnswer": "A",
             "marks": 2.5
           }
-        ]
+        ],
+        "schoolCode": "era",
+        "schoolId": "era",
+        "schoolName": "EXCEL ROYAL ACADEMY (AWKA)"
       },
       {
         "id": "exam_mqwk5bea",
@@ -3344,7 +3386,10 @@
             "correctAnswer": "A",
             "marks": 2.5
           }
-        ]
+        ],
+        "schoolCode": "era",
+        "schoolId": "era",
+        "schoolName": "EXCEL ROYAL ACADEMY (AWKA)"
       },
       {
         "id": "exam_mqwjsmf6",
@@ -3715,7 +3760,10 @@
             "correctAnswer": "A",
             "marks": 2.5
           }
-        ]
+        ],
+        "schoolCode": "era",
+        "schoolId": "era",
+        "schoolName": "EXCEL ROYAL ACADEMY (AWKA)"
       },
       {
         "id": "exam_mqwfwpaz",
@@ -3882,7 +3930,10 @@
             "correctAnswer": "C",
             "marks": 2.5
           }
-        ]
+        ],
+        "schoolCode": "era",
+        "schoolId": "era",
+        "schoolName": "EXCEL ROYAL ACADEMY (AWKA)"
       },
       {
         "id": "exam_mqwha8cw",
@@ -4253,7 +4304,10 @@
             "correctAnswer": "B",
             "marks": 2.5
           }
-        ]
+        ],
+        "schoolCode": "era",
+        "schoolId": "era",
+        "schoolName": "EXCEL ROYAL ACADEMY (AWKA)"
       }
     ],
     "isCustom": true,
@@ -5100,7 +5154,10 @@
             "correctAnswer": "C",
             "marks": 2.5
           }
-        ]
+        ],
+        "schoolCode": "excel",
+        "schoolId": "excel",
+        "schoolName": "EXCEL ROYAL ACADEMY(ENUGU)"
       },
       {
         "id": "exam_mr7okwvr",
@@ -5351,7 +5408,10 @@
             "correctAnswer": "C",
             "marks": 2.5
           }
-        ]
+        ],
+        "schoolCode": "excel",
+        "schoolId": "excel",
+        "schoolName": "EXCEL ROYAL ACADEMY(ENUGU)"
       },
       {
         "id": "exam_mr3mgozv",
@@ -5602,7 +5662,10 @@
             "correctAnswer": "B",
             "marks": 2.5
           }
-        ]
+        ],
+        "schoolCode": "excel",
+        "schoolId": "excel",
+        "schoolName": "EXCEL ROYAL ACADEMY(ENUGU)"
       },
       {
         "id": "exam_mr3ltn32",
@@ -5853,7 +5916,10 @@
             "correctAnswer": "B",
             "marks": 2.5
           }
-        ]
+        ],
+        "schoolCode": "excel",
+        "schoolId": "excel",
+        "schoolName": "EXCEL ROYAL ACADEMY(ENUGU)"
       }
     ]
   },
@@ -5900,7 +5966,10 @@
             "correctAnswer": "B",
             "marks": 5
           }
-        ]
+        ],
+        "schoolCode": "ctsss",
+        "schoolId": "ctsss",
+        "schoolName": "CHRIST THE SAVIOUR SECONDARY SCHOOL ANAMBRA"
       }
     ]
   },
@@ -5962,7 +6031,10 @@
             "correctAnswer": "B",
             "marks": 5
           }
-        ]
+        ],
+        "schoolCode": "central",
+        "schoolId": "central",
+        "schoolName": "Central Demonstration School"
       }
     ]
   },
@@ -6009,7 +6081,10 @@
             "correctAnswer": "B",
             "marks": 5
           }
-        ]
+        ],
+        "schoolCode": "excel_enugu",
+        "schoolId": "excel_enugu",
+        "schoolName": "Excel Royal Academy (Enugu)"
       }
     ]
   },
@@ -6056,7 +6131,10 @@
             "correctAnswer": "B",
             "marks": 5
           }
-        ]
+        ],
+        "schoolCode": "kingskid",
+        "schoolId": "kingskid",
+        "schoolName": "Kings Kid Academy"
       }
     ]
   },
@@ -6103,7 +6181,10 @@
             "correctAnswer": "B",
             "marks": 5
           }
-        ]
+        ],
+        "schoolCode": "cothi",
+        "schoolId": "cothi",
+        "schoolName": "Cothi Global College"
       }
     ]
   },
@@ -6150,7 +6231,10 @@
             "correctAnswer": "B",
             "marks": 5
           }
-        ]
+        ],
+        "schoolCode": "anchor",
+        "schoolId": "anchor",
+        "schoolName": "Anchor Secondary School"
       }
     ]
   },
@@ -6442,7 +6526,10 @@
             "correctAnswer": "A",
             "marks": 1
           }
-        ]
+        ],
+        "schoolCode": "immaculate",
+        "schoolId": "immaculate",
+        "schoolName": "IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU"
       },
       {
         "id": "exam_immac_ss1_agric",
@@ -6695,7 +6782,10 @@
             "correctAnswer": "A",
             "marks": 1
           }
-        ]
+        ],
+        "schoolCode": "immaculate",
+        "schoolId": "immaculate",
+        "schoolName": "IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU"
       },
       {
         "id": "exam_immac_ss2_agric",
@@ -6948,7 +7038,10 @@
             "correctAnswer": "A",
             "marks": 1
           }
-        ]
+        ],
+        "schoolCode": "immaculate",
+        "schoolId": "immaculate",
+        "schoolName": "IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU"
       },
       {
         "id": "exam_immac_ss3_agric",
@@ -7201,7 +7294,10 @@
             "correctAnswer": "A",
             "marks": 1
           }
-        ]
+        ],
+        "schoolCode": "immaculate",
+        "schoolId": "immaculate",
+        "schoolName": "IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU"
       },
       {
         "id": "exam_immac_ss3_chem",
@@ -7454,7 +7550,10 @@
             "correctAnswer": "B",
             "marks": 1
           }
-        ]
+        ],
+        "schoolCode": "immaculate",
+        "schoolId": "immaculate",
+        "schoolName": "IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU"
       },
       {
         "id": "exam_immac_ss2_bio",
@@ -7707,7 +7806,10 @@
             "correctAnswer": "B",
             "marks": 1
           }
-        ]
+        ],
+        "schoolCode": "immaculate",
+        "schoolId": "immaculate",
+        "schoolName": "IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU"
       },
       {
         "id": "exam_immac_ss2_igbo",
@@ -8020,7 +8122,10 @@
             "correctAnswer": "A",
             "marks": 1
           }
-        ]
+        ],
+        "schoolCode": "immaculate",
+        "schoolId": "immaculate",
+        "schoolName": "IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU"
       }
     ],
     "updatedAt": "2026-11-07T08:30:57.945Z"

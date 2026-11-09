@@ -285,6 +285,12 @@ const db = {
     return exams.find(e => e.id === id);
   },
   saveExam(exam) {
+    const settings = this.getSettings();
+    if (!exam.schoolCode && settings.schoolCode) {
+      exam.schoolCode = settings.schoolCode;
+      exam.schoolId = settings.schoolCode;
+      exam.schoolName = settings.schoolName;
+    }
     const exams = this.getExams();
     const index = exams.findIndex(e => e.id === exam.id);
     if (index >= 0) {
@@ -319,13 +325,21 @@ const db = {
   },
 
   importCothiExam(cothiExamId) {
+    const settings = this.getSettings();
+    const activeCode = (settings.schoolCode || '').toLowerCase();
     const allSchools = this.getCothiCentralSchools();
+    const activeSchool = allSchools.find(s => s.code && s.code.toLowerCase() === activeCode);
     let found = null;
-    for (const s of allSchools) {
-      const match = (s.exams || []).find(e => e.id === cothiExamId);
-      if (match) {
-        found = match;
-        break;
+    if (activeSchool && Array.isArray(activeSchool.exams)) {
+      found = activeSchool.exams.find(e => e.id === cothiExamId);
+    }
+    if (!found) {
+      for (const s of allSchools) {
+        const match = (s.exams || []).find(e => e.id === cothiExamId);
+        if (match) {
+          found = match;
+          break;
+        }
       }
     }
     if (!found) throw new Error("Exam not found in COTHI central repository.");
