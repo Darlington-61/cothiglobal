@@ -126,6 +126,8 @@ async function fetchRawCloudData() {
   return await fetchFromEndpoint('66.235.174.177', 'cbtbycothi.com.ng');
 }
 
+const IGNORED_TEST_CODES = new Set(['f', 'dd', 'w', 'h', 'kk', 'excel_enugu', 'central', 'kingskid', 'cothi', 'anchor']);
+
 function parseCloudPayload(cloud) {
   let reg1 = [];
   let reg2 = [];
@@ -151,6 +153,7 @@ function parseCloudPayload(cloud) {
 
   for (const [id, s] of schoolsMap.entries()) {
     const code = (s.code || s.schoolCode || id.replace('school_', '')).trim().toLowerCase();
+    if (IGNORED_TEST_CODES.has(code)) continue;
     const name = (s.name || s.schoolName || 'COTHI School').trim();
     const motto = (s.motto || s.address || 'Excellence in Learning').trim();
     const primaryColor = s.primaryColor || '#2563eb';

@@ -161,9 +161,12 @@ async function fetchCothiSchools(forceRefresh = false) {
           <span>👥 ${s.studentsCount || 0} Registered Students</span>
           <span>📝 ${s.examsCount || 0} Ready Exams</span>
         </div>
-        <button class="btn btn-primary btn-block" onclick="syncSchool('${s.code}')">
-          ⬇️ Download & Activate All Data for This School
-        </button>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-primary" style="flex:1;" onclick="syncSchool('${s.code}')">
+            ⬇️ Download &amp; Activate All Data for This School
+          </button>
+          ${!isCurrent ? `<button type="button" class="btn btn-outline-danger btn-sm" onclick="deleteSchoolItem('${s.code}', '${s.name.replace(/'/g, "\\'")}')" title="Remove School">🗑️</button>` : ''}
+        </div>
       `;
       container.appendChild(card);
     });
@@ -201,6 +204,26 @@ async function syncSchool(schoolCode) {
     }
   } catch (err) {
     alert('Failed to connect to COTHI Cloud or local server.');
+  }
+}
+
+async function deleteSchoolItem(code, name) {
+  if (!confirm(`Are you sure you want to remove "${name}" [${code.toUpperCase()}] from the local directory?\n\nThis will remove it from the schools list.`)) return;
+  try {
+    const res = await fetch('/api/admin/schools/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code })
+    });
+    const data = await res.json();
+    if (data.success) {
+      alert(`School "${name}" removed successfully.`);
+      fetchCothiSchools();
+    } else {
+      alert(data.message || 'Failed to remove school.');
+    }
+  } catch (err) {
+    alert('Server communication error.');
   }
 }
 

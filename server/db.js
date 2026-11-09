@@ -109,6 +109,24 @@ const db = {
     return schoolRecord;
   },
 
+  deleteSchoolFromRegistry(schoolCode) {
+    const cleanCode = (schoolCode || '').trim().toLowerCase();
+    if (!cleanCode) return false;
+
+    // 1. Remove from custom_schools.json
+    let custom = this.getCustomSchools();
+    custom = custom.filter(s => (s.code || '').toLowerCase() !== cleanCode);
+    this.saveCustomSchools(custom);
+
+    // 2. Remove from cothi_cache.json
+    const cacheFile = path.join(DATA_DIR, 'cothi_cache.json');
+    let cached = readJSON(cacheFile, []);
+    cached = cached.filter(s => (s.code || '').toLowerCase() !== cleanCode);
+    writeJSON(cacheFile, cached);
+
+    return true;
+  },
+
   snapshotCurrentSchool() {
     try {
       const cur = this.getSettings();

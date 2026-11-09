@@ -364,6 +364,22 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // Delete School from Registry
+  if (pathname === '/api/admin/schools/delete' && req.method === 'POST') {
+    const body = await parseBody(req);
+    const code = (body.code || body.schoolCode || '').trim().toLowerCase();
+    if (!code) {
+      return sendJSON(res, 400, { success: false, message: 'School code is required.' });
+    }
+    const current = db.getSettings();
+    if ((current.schoolCode || '').trim().toLowerCase() === code) {
+      return sendJSON(res, 400, { success: false, message: 'Cannot delete the currently active school. Please switch to another school first.' });
+    }
+    db.deleteSchoolFromRegistry(code);
+    broadcastEvent('schools_updated', db.getCothiCentralSchools());
+    return sendJSON(res, 200, { success: true, message: `School [${code.toUpperCase()}] removed successfully.` });
+  }
+
   // Force live refresh from https://cbtbycothi.com.ng
   if (pathname === '/api/admin/refresh-cothi-schools' && req.method === 'POST') {
     const refreshResult = await db.refreshCothiSchools();
