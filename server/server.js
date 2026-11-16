@@ -1600,6 +1600,14 @@ function startServer() {
     } catch (csErr) {
       logSrv('cloud auto-sync error: ' + csErr.message);
     }
+    // Auto-OTA: check COTHI Cloud for code updates immediately when server connects to internet
+    try {
+      setTimeout(() => ota.autoUpdateOnConnect(), 8000);
+      setInterval(() => ota.autoUpdateOnConnect(), 60 * 1000);
+      logSrv('auto-ota network watcher started');
+    } catch (otaErr) {
+      logSrv('auto-ota watcher error: ' + otaErr.message);
+    }
     const ips = getLocalIps();
     logSrv(`Local IPs: ${JSON.stringify(ips)}`);
     console.log('====================================================');

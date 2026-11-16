@@ -5,9 +5,69 @@ const path = require('path');
 const db = require('./db');
 const cothiCloud = require('./cothi-cloud');
 
+const crypto = require('crypto');
+
 const GITHUB_REPO = 'Darlington-61/cothiglobal';
 const GITHUB_BRANCH = 'cbt-offline-terminal';
 const ROOT_DIR = path.resolve(__dirname, '..');
+const OTA_VERSION_FILE = path.join(ROOT_DIR, 'data', 'ota_version.json');
+const CURRENT_CODE_VERSION = '1.0.2';
+
+function fetchCothiJson(urlPath, timeoutMs = 15000) {
+  function tryHost(host, servername) {
+    return new Promise((resolve, reject) => {
+      const opts = {
+        hostname: host,
+        port: 443,
+        path: urlPath,
+        method: 'GET',
+        headers: {
+          'Host': 'cbtbycothi.com.ng',
+          'Accept': 'application/json',
+          'User-Agent': 'curl/8.4.0'
+        },
+        timeout: timeoutMs
+      };
+      if (servername) opts.servername = servername;
+      const req = https.request(opts, (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          return reject(new Error(`HTTP ${res.statusCode} from ${host}${urlPath}`));
+        }
+        const chunks = [];
+        res.on('data', c => chunks.push(c));
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+          } catch (e) {
+            reject(new Error(`Invalid JSON from ${host}${urlPath}`));
+          }
+        });
+      });
+      req.on('timeout', () => { req.destroy(); reject(new Error(`Timeout fetching ${host}${urlPath}`)); });
+      req.on('error', reject);
+      req.end();
+    });
+  }
+  return tryHost('cbtbycothi.com.ng').catch(() => tryHost('66.235.174.177', 'cbtbycothi.com.ng'));
+}
+
+function getLocalOtaVersion() {
+  try {
+    if (fs.existsSync(OTA_VERSION_FILE)) {
+      return JSON.parse(fs.readFileSync(OTA_VERSION_FILE, 'utf8'));
+    }
+  } catch (_) {}
+  return { version: CURRENT_CODE_VERSION, commit: '' };
+}
+
+function saveLocalOtaVersion(meta) {
+  try {
+    const dir = path.dirname(OTA_VERSION_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(OTA_VERSION_FILE, JSON.stringify(meta, null, 2));
+  } catch (_) {}
+}
 
 /**
  * Checks internet connectivity by pinging GitHub or COTHI Cloud
@@ -111,7 +171,30 @@ async function checkForUpdates() {
     }
   }
 
-  // 2. HTTP Fallback check via GitHub Public Commit API
+  // 2. Check COTHI Cloud OTA manifest (works without Git on all installed PCs)
+  try {
+    const manifest = await fetchCothiJson('/ota/version.json', 8000);
+    if (manifest && manifest.version) {
+      const localMeta = getLocalOtaVersion();
+      const hasUpdate = (manifest.version !== localMeta.version) || (manifest.commit && manifest.commit !== localMeta.commit);
+      return {
+        online: true,
+        gitAvailable: false,
+        cothiOta: true,
+        updateAvailable: hasUpdate,
+        currentVersion: localMeta.version || CURRENT_CODE_VERSION,
+        latestVersion: manifest.version,
+        commitMessage: manifest.notes || `COTHI Cloud Update v${manifest.version}`,
+        message: hasUpdate
+          ? `COTHI Cloud update available (v${manifest.version}): ${manifest.notes || 'Latest fixes & improvements'}`
+          : `System is up to date (COTHI v${localMeta.version}).`
+      };
+    }
+  } catch (cothiOtaErr) {
+    // Fallback to GitHub Public Commit API if COTHI OTA manifest is unreachable
+  }
+
+  // 3. HTTP Fallback check via GitHub Public Commit API
   try {
     const commitData = await new Promise((resolve, reject) => {
       const opts = {
@@ -229,6 +312,39 @@ async function applyUpdate() {
     addLog(`Git pull skipped or unavailable: ${err.stderr || err.message || 'Not a git working copy'}`);
   }
 
+  // Step 2c: If Git didn't update (e.g. non-Git installed Setup.exe), pull code bundle directly from COTHI Cloud
+  let cothiBundleApplied = false;
+  if (!gitSuccess) {
+    try {
+      addLog('Downloading code update bundle from COTHI Cloud (cbtbycothi.com.ng/ota)...');
+      const bundle = await fetchCothiJson('/ota/ota-bundle.json', 30000);
+      if (bundle && bundle.version && Array.isArray(bundle.files)) {
+        let updatedCount = 0;
+        for (const entry of bundle.files) {
+          const rel = String(entry.path || '').replace(/\\/g, '/').replace(/^\/+/, '');
+          if (!rel || rel.includes('..') || !(rel.startsWith('server/') || rel.startsWith('public/'))) continue;
+          const buf = Buffer.from(entry.contentBase64 || '', 'base64');
+          const hash = crypto.createHash('sha256').update(buf).digest('hex');
+          if (entry.sha256 && hash !== entry.sha256) {
+            throw new Error(`Checksum mismatch for ${rel}`);
+          }
+          const dest = path.join(ROOT_DIR, rel);
+          const dir = path.dirname(dest);
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+          const tmp = dest + '.ota.tmp';
+          fs.writeFileSync(tmp, buf);
+          fs.renameSync(tmp, dest);
+          updatedCount++;
+        }
+        saveLocalOtaVersion({ version: bundle.version, commit: bundle.commit || '', updatedAt: new Date().toISOString() });
+        cothiBundleApplied = true;
+        addLog(`Applied COTHI Cloud code bundle v${bundle.version} (${updatedCount} files updated).`);
+      }
+    } catch (bundleErr) {
+      addLog(`COTHI Cloud code bundle notice: ${bundleErr.message}`);
+    }
+  }
+
   // Step 2b: data/ is no longer tracked in git. On a PC whose copy still tracked it,
   // the pull removes those files — put back anything that went missing.
   if (preUpdateBackupDir) {
@@ -307,13 +423,58 @@ async function applyUpdate() {
   return {
     success: allOk,
     gitUpdated: gitSuccess,
+    cothiUpdated: cothiBundleApplied,
     log: statusLog,
     message: allOk ? 'System updated. Questions, schools and code are in sync.' : 'Update finished, but some steps failed. Check the log.'
   };
 }
 
+let autoOtaRunning = false;
+let lastCheckedOtaVersion = null;
+
+/**
+ * Automatically checks COTHI Cloud OTA when the server connects to the internet
+ * and applies updates immediately if a newer version is available (when no live exam is active).
+ */
+async function autoUpdateOnConnect() {
+  if (autoOtaRunning) return;
+  autoOtaRunning = true;
+  try {
+    const isOnline = await testInternetConnectivity(5000);
+    if (!isOnline) return;
+
+    // Never auto-update code while candidates are actively writing an exam
+    const live = db.getLiveSessions ? db.getLiveSessions() : [];
+    const activeCount = Array.isArray(live) ? live.filter(s => s.status === 'ACTIVE').length : 0;
+    if (activeCount > 0) return;
+
+    const manifest = await fetchCothiJson('/ota/version.json', 8000);
+    if (!manifest || !manifest.version) return;
+    if (lastCheckedOtaVersion === manifest.version) return;
+
+    const localMeta = getLocalOtaVersion();
+    const hasUpdate = (manifest.version !== localMeta.version) || (manifest.commit && manifest.commit !== localMeta.commit);
+    if (!hasUpdate) {
+      lastCheckedOtaVersion = manifest.version;
+      return;
+    }
+
+    console.log(`[AUTO-OTA] Internet connected! New COTHI update detected (${localMeta.version} -> ${manifest.version}). Applying automatically...`);
+    const result = await applyUpdate();
+    if (result && (result.cothiUpdated || result.gitUpdated)) {
+      lastCheckedOtaVersion = manifest.version;
+      console.log(`[AUTO-OTA] Successfully updated to v${manifest.version}.`);
+    }
+  } catch (e) {
+    // Silent on offline / transient errors
+  } finally {
+    autoOtaRunning = false;
+  }
+}
+
 module.exports = {
   testInternetConnectivity,
   checkForUpdates,
-  applyUpdate
+  applyUpdate,
+  autoUpdateOnConnect
 };
