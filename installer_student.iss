@@ -1,4 +1,4 @@
-; Inno Setup Script for COTHI Student Exam Terminal
+; Inno Setup Script for COTHI Student Exam Terminal (Backward-Compatible with Existing School Labs)
 #define MyAppName "COTHI Student Exam"
 #define MyAppVersion "2.0"
 #define MyAppPublisher "COTHI Global Systems"
@@ -25,6 +25,8 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
+CloseApplications=yes
+CloseApplicationsFilter=COTHI-Student-Exam.exe
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -33,7 +35,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; 1. Core Student App Files & Kiosk Binaries (Always updated)
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Excludes: "config.json"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+; 2. Default Config File (Only installed on fresh machines; preserves configured server URL on former lab PCs)
+Source: "{#SourceDir}\config.json"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\icon.ico"; AppUserModelID: "ng.com.cbtbycothi.student"

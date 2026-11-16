@@ -70,6 +70,7 @@ async function initApp() {
   checkServerConnection();
 }
 
+let autoDetectionTimer = null;
 async function checkServerConnection() {
   const dot = document.getElementById('serverStatusDot');
   const label = document.getElementById('serverStatusLabel');
@@ -104,6 +105,13 @@ async function checkServerConnection() {
       if (quickInput && !quickInput.value) {
         quickInput.value = serverHost.replace(/^https?:\/\//, '');
       }
+    }
+    // Automatically attempt auto-detection if not connected
+    if (!autoDetectionTimer) {
+      autoDetectionTimer = setTimeout(() => {
+        autoDetectionTimer = null;
+        if (typeof quickAutoDetectServer === 'function') quickAutoDetectServer();
+      }, 2000);
     }
     return false;
   }
@@ -320,7 +328,7 @@ async function registerCandidate() {
     }
 
     const assignedRegNo = (data.student && data.student.regNo) || data.regNo || regNo;
-    const pin = data.pin || (data.student && data.student.pin) || '1234';
+    const pin = data.pin || (data.student && data.student.pin) || '';
 
     document.getElementById('regNoInput').value = assignedRegNo;
     document.getElementById('pinInput').value = pin;
@@ -362,6 +370,7 @@ async function handleKioskLogin(e) {
 
     currentStudent = data.student;
     currentExam = data.exam;
+    studentSessionToken = data.sessionToken || '';
     window._resume = data.resume || null; // server-saved answers + time (crash resume on a new device)
     if (data.branding) applySchoolBranding(data.branding);
 
@@ -411,6 +420,10 @@ function logoutCandidate() {
   showView(viewLogin);
 }
 
+// Exam session token issued by the server at login (required for questions,
+// heartbeats and submission).
+var studentSessionToken = '';
+
 // Heartbeat & Live Progress Transceiver
 async function sendStudentHeartbeat() {
   if (!currentStudent || !currentExam) return;
@@ -419,10 +432,11 @@ async function sendStudentHeartbeat() {
   const currentQNum = currentQuestionIndex + 1;
 
   try {
-    await fetch(`${serverHost}/api/student/heartbeat`, {
+    const hbRes = await fetch(`${serverHost}/api/student/heartbeat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        token: studentSessionToken,
         regNo: currentStudent.regNo,
         examId: currentExam.id,
         answeredCount: answeredCount,
@@ -431,6 +445,14 @@ async function sendStudentHeartbeat() {
         answers: studentAnswers
       })
     });
+    // The server keeps the official exam clock; never show more time than it allows.
+    try {
+      const hb = await hbRes.json();
+      if (hb && typeof hb.serverTimeRemaining === 'number' && hb.serverTimeRemaining < secondsRemaining - 3) {
+        secondsRemaining = hb.serverTimeRemaining;
+        updateTimerText();
+      }
+    } catch (e) {}
   } catch (err) {
     // Non-blocking background keep-alive
   }
@@ -439,8 +461,9 @@ async function sendStudentHeartbeat() {
 // 3. Start Exam
 async function startExamSession() {
   try {
-    const res = await fetch(`${serverHost}/api/student/exam?regNo=${encodeURIComponent(currentStudent.regNo)}`);
+    const res = await fetch(`${serverHost}/api/student/exam?regNo=${encodeURIComponent(currentStudent.regNo)}&token=${encodeURIComponent(studentSessionToken)}`);
     const data = await res.json();
+    if (!res.ok) { alert(data.message || 'Failed to load questions from server.'); return; }
     questions = data.questions || [];
     window._passages = {};
     (data.passages || []).forEach(p => { if (p && p.id) window._passages[p.id] = p; });
@@ -1001,6 +1024,7 @@ async function executeFinalSubmit() {
   btn.textContent = 'Transmitting...';
 
   const payload = JSON.stringify({
+    token: studentSessionToken,
     regNo: currentStudent.regNo,
     examId: currentExam.id,
     answers: studentAnswers
@@ -1060,16 +1084,38 @@ async function confirmSupervisorExit() {
 
   if (window.cbtAPI && window.cbtAPI.requestExit) {
     const res = await window.cbtAPI.requestExit(pin);
-    if (!res.success) {
-      alertEl.textContent = res.message || 'Incorrect PIN.';
+    if (res && res.success) {
+      return;
+    }
+    if (alertEl) {
+      alertEl.textContent = (res && res.message) ? res.message : 'Incorrect PIN. Default is 9999.';
       alertEl.style.display = 'block';
     }
+    return;
+  }
+
+  // Browser mode fallback
+  if (pin === '9999') {
+    window.close();
+    window.location.href = 'about:blank';
+    return;
+  }
+
+  let ok = false;
+  try {
+    const r = await fetch(`${serverHost}/api/student/exit-pin-check`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin })
+    });
+    const d = await r.json();
+    ok = d && d.ok === true;
+  } catch (e) {}
+
+  if (ok) {
+    window.close();
+    window.location.href = 'about:blank';
   } else {
-    // In browser mode
-    if (pin === '9999') {
-      window.close();
-    } else {
-      alertEl.textContent = 'Incorrect PIN.';
+    if (alertEl) {
+      alertEl.textContent = 'Incorrect PIN. Default is 9999.';
       alertEl.style.display = 'block';
     }
   }

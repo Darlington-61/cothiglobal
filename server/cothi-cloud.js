@@ -64,6 +64,23 @@ function getAuthToken() {
   return 'mock-access-token';
 }
 
+// The cloud currently accepts a shared "mock-access-token". Until cbtbycothi.com.ng
+// stops accepting it, the fallback stays ON by default so downloads keep working;
+// set "allowLegacyCloudToken": false in data/settings.json to switch it off.
+function legacyTokenAllowed() {
+  try {
+    const sFile = path.join(path.dirname(getCacheFilePath()), 'settings.json');
+    if (fs.existsSync(sFile)) {
+      const st = JSON.parse(fs.readFileSync(sFile, 'utf-8'));
+      if (st.allowLegacyCloudToken === false) return false;
+    }
+  } catch (e) {}
+  return true;
+}
+
+// Keep names/reg numbers from the cloud free of HTML so they can't inject markup.
+function cleanText(v) { return String(v == null ? '' : v).replace(/[<>"`]/g, '').trim(); }
+
 function fetchFromEndpoint(host, servername, authToken) {
   return new Promise((resolve, reject) => {
     const token = authToken || getAuthToken();
@@ -78,7 +95,7 @@ function fetchFromEndpoint(host, servername, authToken) {
         'Accept': '*/*',
         'User-Agent': 'curl/8.4.0'
       },
-      timeout: 60000
+      timeout: 30000
     };
     if (servername) {
       options.servername = servername;
@@ -86,7 +103,7 @@ function fetchFromEndpoint(host, servername, authToken) {
 
     const req = https.request(options, (res) => {
       // If server rejects custom token with 401 or 403, retry with universal mock-access-token
-      if ((res.statusCode === 401 || res.statusCode === 403) && token !== 'mock-access-token') {
+      if ((res.statusCode === 401 || res.statusCode === 403) && token !== 'mock-access-token' && legacyTokenAllowed()) {
         console.log(`[COTHI CLOUD] Token rejected (HTTP ${res.statusCode}). Retrying with universal sync token...`);
         fetchFromEndpoint(host, servername, 'mock-access-token').then(resolve).catch(reject);
         return;
@@ -123,17 +140,37 @@ function fetchFromEndpoint(host, servername, authToken) {
 
 async function fetchRawCloudData() {
   // 1. Try standard hostname
+  let firstErr = null;
   try {
     return await fetchFromEndpoint('cbtbycothi.com.ng');
   } catch (err) {
+    firstErr = err;
     console.warn(`[COTHI CLOUD] Hostname fetch failed (${err.message}). Trying direct IP fallback (66.235.174.177)...`);
   }
 
   // 2. Direct IP fallback with SNI (bypasses DNS issues on local hotspot/school networks)
-  return await fetchFromEndpoint('66.235.174.177', 'cbtbycothi.com.ng');
+  try {
+    return await fetchFromEndpoint('66.235.174.177', 'cbtbycothi.com.ng');
+  } catch (err2) {
+    throw new Error(`${firstErr ? firstErr.message : ''} / IP fallback: ${err2.message}`);
+  }
 }
 
-const IGNORED_TEST_CODES = new Set(['f', 'dd', 'w', 'h', 'kk', 'central', 'kingskid', 'cothi', 'anchor']);
+// Only obvious throw-away test codes are skipped. ("kingskid" and "anchor" used to be
+// listed here, which is why Kings Kids / Anchor could never be downloaded.)
+const IGNORED_TEST_CODES = new Set(['f', 'dd', 'w', 'h', 'kk', 'central', 'cothi']);
+
+// Explicit code aliases (old code on the cloud -> code used on the terminal).
+const CODE_ALIASES = { icss: 'immaculate', god: 'godscare', excel_royal: 'excel' };
+function aliasesFor(code) {
+  const out = [code];
+  Object.keys(CODE_ALIASES).forEach(a => {
+    if (CODE_ALIASES[a] === code) out.push(a);
+    if (a === code) out.push(CODE_ALIASES[a]);
+  });
+  return Array.from(new Set(out));
+}
+function escRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 function parseCloudPayload(cloud) {
   let reg1 = [];
@@ -162,9 +199,7 @@ function parseCloudPayload(cloud) {
     if (m) {
       const rawCode = m[1].toLowerCase();
       if (!IGNORED_TEST_CODES.has(rawCode)) {
-        let code = rawCode;
-        if (code === 'icss') code = 'immaculate';
-        if (code === 'god') code = 'godscare';
+        const code = CODE_ALIASES[rawCode] || rawCode;
 
         let schName = '';
         try {
@@ -207,13 +242,10 @@ function parseCloudPayload(cloud) {
     const schoolStudentsMap = new Map();
 
     // Codes and IDs to match for this school (supports aliases like icss <-> immaculate, god <-> godscare)
-    const codesToMatch = [code];
-    if (code === 'immaculate') codesToMatch.push('icss');
-    if (code === 'icss') codesToMatch.push('immaculate');
-    if (code === 'godscare') codesToMatch.push('god');
-    if (code === 'god') codesToMatch.push('godscare');
-    if (code === 'excel') codesToMatch.push('excel_royal');
-    if (code === 'excel_enugu') codesToMatch.push('excel', 'excel_royal');
+    // Exact code + explicit aliases only. (excel_enugu used to also pull in "excel"
+    // students, mixing two schools' rosters.)
+    const codesToMatch = aliasesFor(code);
+    const regPrefixRe = new RegExp('^(' + codesToMatch.map(escRe).join('|') + ')[-_/]?\\d', 'i');
 
     // 1. Check students_registry
     allStudents
@@ -225,10 +257,10 @@ function parseCloudPayload(cloud) {
       .forEach((st, idx) => {
         const reg = (st.username || st.regNo || `${code.toUpperCase()}/${new Date().getFullYear()}/${String(idx + 1).padStart(3, '0')}`).trim();
         schoolStudentsMap.set(reg.toLowerCase(), {
-          regNo: reg,
-          name: st.name || `Student ${idx + 1}`,
-          classLevel: st.classGrade || st.classLevel || 'SS 2',
-          pin: st.pin || code || '1234',
+          regNo: cleanText(reg),
+          name: cleanText(st.name || `Student ${idx + 1}`),
+          classLevel: cleanText(st.classGrade || st.classLevel || 'SS 2'),
+          pin: st.pin ? String(st.pin).trim() : '',
           gender: st.gender || 'Not Specified'
         });
       });
@@ -244,14 +276,16 @@ function parseCloudPayload(cloud) {
                 const targetSch = (r.schoolId || '').replace('school_', '').toLowerCase();
                 const studentId = r.studentId.trim();
                 const studentIdLower = studentId.toLowerCase();
-                // Match by schoolId or if studentId starts with school code (e.g. excel144, era028, k001)
-                if (targetSch === code || studentIdLower.startsWith(code)) {
+                // Match by schoolId, or a reg no that is the school code followed by digits
+                // (e.g. excel144, era028). A bare startsWith() let code "k" claim every
+                // student whose id began with k, and "excel" claim excel_enugu students.
+                if ((targetSch && codesToMatch.includes(targetSch)) || (!targetSch && regPrefixRe.test(studentId))) {
                   if (!schoolStudentsMap.has(studentIdLower)) {
                     schoolStudentsMap.set(studentIdLower, {
-                      regNo: studentId,
-                      name: r.studentName.trim(),
+                      regNo: cleanText(studentId),
+                      name: cleanText(r.studentName),
                       classLevel: 'SS 2',
-                      pin: code || '1234',
+                      pin: '',
                       gender: 'Not Specified'
                     });
                   }
@@ -277,10 +311,10 @@ function parseCloudPayload(cloud) {
                   const sReg = match[2].trim();
                   if (!schoolStudentsMap.has(sReg.toLowerCase())) {
                     schoolStudentsMap.set(sReg.toLowerCase(), {
-                      regNo: sReg,
-                      name: sName,
+                      regNo: cleanText(sReg),
+                      name: cleanText(sName),
                       classLevel: 'SS 2',
-                      pin: code || '1234',
+                      pin: '',
                       gender: 'Not Specified'
                     });
                   }
@@ -292,10 +326,10 @@ function parseCloudPayload(cloud) {
                   const sReg = `${code}${String(schoolStudentsMap.size + 1).padStart(3, '0')}`;
                   if (!schoolStudentsMap.has(sReg.toLowerCase())) {
                     schoolStudentsMap.set(sReg.toLowerCase(), {
-                      regNo: sReg,
-                      name: sName,
+                      regNo: cleanText(sReg),
+                      name: cleanText(sName),
                       classLevel: 'SS 2',
-                      pin: code || '1234',
+                      pin: '',
                       gender: 'Not Specified'
                     });
                   }
@@ -322,7 +356,7 @@ function parseCloudPayload(cloud) {
                   regNo: reg,
                   name: `Candidate ${reg.toUpperCase()}`,
                   classLevel: 'SS 2',
-                  pin: code || '1234',
+                  pin: '',
                   gender: 'Not Specified'
                 });
               }
@@ -385,39 +419,14 @@ function parseCloudPayload(cloud) {
       }
     });
 
-    if (combinedExams.length === 0) {
-      combinedExams.push({
-        id: `exam-${code}-gen`,
-        title: `${name} General Knowledge & Aptitude CBT`,
-        subject: 'General Knowledge',
-        classLevel: 'SS 2',
-        durationMinutes: 40,
-        passPercentage: 50,
-        instructions: 'Answer all questions carefully.',
-        questions: [
-          {
-            id: 1,
-            question: "Which organelle is referred to as the powerhouse of the cell?",
-            options: { A: "Ribosome", B: "Mitochondria", C: "Golgi apparatus", D: "Nucleus" },
-            correctAnswer: "B",
-            marks: 5
-          },
-          {
-            id: 2,
-            question: "Solve the linear equation: 3x - 7 = 14",
-            options: { A: "x = 5", B: "x = 7", C: "x = 6", D: "x = 8" },
-            correctAnswer: "B",
-            marks: 5
-          }
-        ]
-      });
-    }
+    // No exams on the cloud for this school: leave the list empty instead of inventing
+    // a placeholder "General Knowledge" paper (which made schools look downloaded).
 
     parsedSchools.push({
       code: code,
       id: id,
-      name: name,
-      motto: motto,
+      name: cleanText(name),
+      motto: cleanText(motto),
       primaryColor: primaryColor,
       accentColor: accentColor,
       logo: logo,
@@ -447,51 +456,24 @@ const cothiCloud = {
   },
 
   async refreshSchoolsFromCloud() {
+    let lastError = null;
     try {
       console.log('[COTHI CLOUD] Fetching live school directory from https://cbtbycothi.com.ng/api/v1/sync...');
       const payload = await fetchRawCloudData();
       const schools = parseCloudPayload(payload);
 
       if (schools && schools.length > 0) {
+        // The cache holds ONLY what the cloud returned. Local snapshots/custom schools
+        // live in custom_schools.json and are merged at read time (db.getCothiCentralSchools),
+        // so stale local copies can no longer overwrite fresh cloud data here.
         const cacheFile = getCacheFilePath();
-        let customSchools = [];
-        try {
-          const customFile = path.join(path.dirname(cacheFile), 'custom_schools.json');
-          if (fs.existsSync(customFile)) {
-            customSchools = JSON.parse(fs.readFileSync(customFile, 'utf-8'));
-          }
-        } catch(e) {}
-
-        const schoolMap = new Map();
-        // 1. Cloud-fetched schools
-        schools.forEach(s => {
-          if (s.code) schoolMap.set(s.code.toLowerCase(), s);
-        });
-
-        // 2. Merge local / custom schools so they are never lost on cloud refreshes
-        (customSchools || []).forEach(cs => {
-          if (cs.code) {
-            const key = cs.code.toLowerCase();
-            if (schoolMap.has(key)) {
-              const cloudSch = schoolMap.get(key);
-              schoolMap.set(key, {
-                ...cloudSch,
-                ...cs,
-                students: (cs.students && cs.students.length > 0) ? cs.students : cloudSch.students,
-                exams: (cs.exams && cs.exams.length > 0) ? cs.exams : cloudSch.exams
-              });
-            } else {
-              schoolMap.set(key, cs);
-            }
-          }
-        });
-
-        const mergedSchools = Array.from(schoolMap.values());
-        fs.writeFileSync(cacheFile, JSON.stringify(mergedSchools, null, 2), 'utf-8');
-        console.log(`[COTHI CLOUD] Successfully cached ${mergedSchools.length} schools (cloud + local merged) to ${cacheFile}`);
-        return { success: true, live: true, schools: mergedSchools, count: mergedSchools.length };
+        fs.writeFileSync(cacheFile, JSON.stringify(schools, null, 2), 'utf-8');
+        console.log(`[COTHI CLOUD] Cached ${schools.length} cloud schools to ${cacheFile}`);
+        return { success: true, live: true, schools, count: schools.length };
       }
+      lastError = 'The cloud responded but contained no schools.';
     } catch (err) {
+      lastError = err.message;
       console.warn('[COTHI CLOUD] Live fetch failed or offline:', err.message);
     }
 
@@ -502,15 +484,16 @@ const cothiCloud = {
       live: false,
       schools: cached,
       count: cached.length,
-      offlineNotice: 'Operating in offline cache mode'
+      error: lastError,
+      offlineNotice: 'Could not download from COTHI Cloud (' + (lastError || 'unknown error') + '). Showing the last saved copy.'
     };
   },
 
-  pushResultsToCloud(schoolCode, submissions) {
+  pushResultsToCloud(schoolCode, submissions, terminalId) {
     return new Promise(async (resolve) => {
       const token = getAuthToken();
       const postData = JSON.stringify({
-        key: `cbt_offline_results_${(schoolCode || 'school').toLowerCase()}`,
+        key: terminalId ? `cbt_offline_results_${(schoolCode || 'school').toLowerCase()}_${terminalId}` : `cbt_offline_results_${(schoolCode || 'school').toLowerCase()}`,
         value: JSON.stringify({
           syncedAt: new Date().toISOString(),
           schoolCode: schoolCode,
@@ -626,3 +609,5 @@ const cothiCloud = {
 };
 
 module.exports = cothiCloud;
+module.exports.aliasesFor = aliasesFor;
+module.exports.cleanText = cleanText;

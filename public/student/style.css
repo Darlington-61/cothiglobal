@@ -65,8 +65,8 @@ body.kiosk-app-body {
     radial-gradient(1200px 600px at 100% -10%, color-mix(in srgb, var(--primary) 10%, transparent), transparent 60%),
     var(--bg);
   color: var(--text);
-  height: 100vh; width: 100vw;
-  display: flex; flex-direction: column; overflow: hidden;
+  min-height: 100vh; min-height: 100dvh; width: 100vw;
+  display: flex; flex-direction: column; overflow: hidden; overflow-y: auto;
   -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none;
 }
 
@@ -437,9 +437,9 @@ body.kiosk-app-body {
 
 /* ============ RESPONSIVE (tablets / phones) ============ */
 @media (max-width: 960px) {
-  .exam-workspace-screen.active { grid-template-columns: 1fr; height: auto; min-height: calc(100vh - 74px); }
-  .palette-sidebar { order: -1; }
-  .palette-buttons-grid { grid-template-columns: repeat(8, 1fr); max-height: 150px; }
+  .exam-workspace-screen.active { grid-template-columns: 1fr; height: auto; min-height: calc(100vh - 74px); min-height: calc(100dvh - 74px); overflow-y: auto; }
+  .palette-sidebar { order: 2; max-height: 180px; overflow-y: auto; }
+  .palette-buttons-grid { grid-template-columns: repeat(8, 1fr); max-height: 120px; overflow-y: auto; }
 }
 @media (max-width: 620px) {
   .kiosk-header { padding: 10px 14px; }
@@ -456,6 +456,8 @@ body.kiosk-app-body {
   .footer-left, .footer-right { width: 100%; }
   .footer-left .btn, .footer-right .btn { flex: 1; }
   .palette-buttons-grid { grid-template-columns: repeat(6, 1fr); }
+  .palette-sidebar { max-height: 140px; }
+  .exam-main-panel { min-height: 0; overflow-y: auto; }
 }
 
 /* ============ MOTION / ANIMATIONS ============ */

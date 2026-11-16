@@ -3,13 +3,14 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const url = require('url');
+const crypto = require('crypto');
 const db = require('./db');
 const cothiCloud = require('./cothi-cloud');
 const ota = require('./ota');
 const { startDiscoveryService } = require('./discovery');
 
 const PORT = process.env.PORT || 8000;
-const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+const PUBLIC_DIR = path.resolve(__dirname, '..', 'public');
 
 // List of connected Server-Sent Event (SSE) clients (Admins)
 const sseClients = new Set();
@@ -20,38 +21,100 @@ if (DATA_DIR.includes('app.asar')) {
 }
 const TOKENS_FILE = path.join(DATA_DIR, 'admin_tokens.json');
 
+// Supervisor login tokens: random, expire after 12 hours, saved so a server restart
+// doesn't log the supervisor out. (Previously ANY string starting with
+// "offline-admin-token-" was accepted, so anyone on the Wi-Fi could act as admin.)
+const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 function loadAdminTokens() {
+  const map = new Map();
   try {
     if (fs.existsSync(TOKENS_FILE)) {
       const arr = JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf-8'));
-      return new Set(Array.isArray(arr) ? arr : []);
+      const now = Date.now();
+      (Array.isArray(arr) ? arr : []).forEach(e => {
+        if (e && typeof e === 'object' && e.t && e.exp > now) map.set(e.t, e.exp); // legacy string tokens are dropped
+      });
     }
   } catch (e) {}
-  return new Set();
+  return map;
 }
-
-function saveAdminToken(tok) {
+function persistAdminTokens() {
   try {
-    validAdminTokens.add(tok);
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(TOKENS_FILE, JSON.stringify(Array.from(validAdminTokens)), 'utf-8');
+    const now = Date.now();
+    const arr = [];
+    validAdminTokens.forEach((exp, t) => { if (exp > now) arr.push({ t, exp }); else validAdminTokens.delete(t); });
+    fs.writeFileSync(TOKENS_FILE, JSON.stringify(arr), 'utf-8');
   } catch (e) {}
 }
-
+function issueAdminToken() {
+  const tok = crypto.randomBytes(32).toString('hex');
+  validAdminTokens.set(tok, Date.now() + TOKEN_TTL_MS);
+  persistAdminTokens();
+  return tok;
+}
 const validAdminTokens = loadAdminTokens();
+persistAdminTokens();
 
-// Checks that a request carries a valid supervisor token (header or ?token=)
 function isAdminAuthed(req, parsedUrl) {
   const header = req.headers['authorization'] || '';
   const bearer = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
   const queryToken = (parsedUrl.query && parsedUrl.query.token) ? String(parsedUrl.query.token).trim() : '';
   const token = bearer || queryToken;
   if (!token) return false;
-  if (validAdminTokens.has(token) || token.startsWith('offline-admin-token-')) {
-    if (!validAdminTokens.has(token)) saveAdminToken(token);
-    return true;
-  }
-  return false;
+  const exp = validAdminTokens.get(token);
+  if (!exp) return false;
+  if (exp < Date.now()) { validAdminTokens.delete(token); return false; }
+  return true;
+}
+
+// ---- Simple in-memory rate limiter (wrong passwords / PINs) -----------------
+const failBuckets = new Map(); // key -> { count, until, first }
+function isLocked(key) {
+  const b = failBuckets.get(key);
+  return !!(b && b.until && b.until > Date.now());
+}
+function noteFailure(key, limit, windowMs, lockMs) {
+  const now = Date.now();
+  let b = failBuckets.get(key);
+  if (!b || now - b.first > windowMs) b = { count: 0, first: now, until: 0 };
+  b.count++;
+  if (b.count >= limit) { b.until = now + lockMs; b.count = 0; b.first = now; }
+  failBuckets.set(key, b);
+}
+function clearFailures(key) { failBuckets.delete(key); }
+function clientIp(req) { return (req.socket && req.socket.remoteAddress) || 'unknown'; }
+
+// ---- Student exam session tokens --------------------------------------------
+// Issued at login (after the PIN check) and required for questions, heartbeats and
+// submission, so nobody can submit or overwrite answers for another candidate.
+// HMAC-based, so they survive a server restart mid-exam.
+const SECRET_FILE = path.join(DATA_DIR, 'server_secret.json');
+function loadServerSecret() {
+  try {
+    if (fs.existsSync(SECRET_FILE)) {
+      const j = JSON.parse(fs.readFileSync(SECRET_FILE, 'utf-8'));
+      if (j && j.secret && j.secret.length >= 32) return j.secret;
+    }
+  } catch (e) {}
+  const secret = crypto.randomBytes(32).toString('hex');
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(SECRET_FILE, JSON.stringify({ secret }), 'utf-8');
+  } catch (e) {}
+  return secret;
+}
+const SERVER_SECRET = loadServerSecret();
+function studentToken(regNo, examId) {
+  return crypto.createHmac('sha256', SERVER_SECRET)
+    .update(String(regNo || '').trim().toLowerCase() + '|' + String(examId || ''))
+    .digest('hex');
+}
+function studentTokenOk(regNo, examId, token) {
+  if (!regNo || !examId || !token) return false;
+  const want = Buffer.from(studentToken(regNo, examId));
+  const got = Buffer.from(String(token));
+  return want.length === got.length && crypto.timingSafeEqual(want, got);
 }
 
 function broadcastEvent(eventType, data) {
@@ -115,26 +178,41 @@ function parseBody(req) {
   });
 }
 
+// Cross-origin access is only needed by the student app (it loads its pages from
+// disk and calls this server). Admin routes are same-origin only, so a web page open
+// on the supervisor PC can't drive the admin API.
+function corsAllowed(pathname) {
+  return pathname === '/api/status' || pathname.startsWith('/api/student/');
+}
 function sendJSON(res, statusCode, data) {
-  res.writeHead(statusCode, {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-  });
+  const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
+  if (res._cors) {
+    headers['Access-Control-Allow-Origin'] = '*';
+    headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS';
+    headers['Access-Control-Allow-Headers'] = 'Content-Type';
+  }
+  res.writeHead(statusCode, headers);
   res.end(JSON.stringify(data));
+}
+function publicSettings(st) {
+  const out = { ...st };
+  delete out.adminPass;
+  delete out.adminPassHash;
+  return out;
 }
 
 const server = http.createServer(async (req, res) => {
   const parsedUrl = url.parse(req.url, true);
   const pathname = parsedUrl.pathname;
+  res._cors = corsAllowed(pathname);
 
-  // Enable CORS Preflight
+  // CORS preflight (student routes only)
   if (req.method === 'OPTIONS') {
+    if (!res._cors) { res.writeHead(403); return res.end(); }
     res.writeHead(204, {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
     });
     return res.end();
   }
@@ -157,8 +235,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*'
+      'Connection': 'keep-alive'
     });
     res.write('retry: 3000\n\n');
     sseClients.add(res);
@@ -207,14 +284,36 @@ const server = http.createServer(async (req, res) => {
 
   // Admin Login
   if (pathname === '/api/admin/login' && req.method === 'POST') {
+    const ipKey = 'admin:' + clientIp(req);
+    if (isLocked(ipKey)) {
+      return sendJSON(res, 429, { success: false, message: 'Too many wrong attempts. Wait 5 minutes and try again.' });
+    }
     const body = await parseBody(req);
     const settings = db.getSettings();
-    if (body.username === settings.adminUser && body.password === settings.adminPass) {
-      const token = 'offline-admin-token-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-      saveAdminToken(token);
-      return sendJSON(res, 200, { success: true, token: token, user: settings.adminUser });
+    if (db.verifyAdmin(String(body.username || ''), String(body.password || ''))) {
+      clearFailures(ipKey);
+      const token = issueAdminToken();
+      return sendJSON(res, 200, { success: true, token: token, user: settings.adminUser || 'admin', mustChangePassword: db.isDefaultAdminPassword() });
     }
+    noteFailure(ipKey, 8, 10 * 60 * 1000, 5 * 60 * 1000);
     return sendJSON(res, 401, { success: false, message: 'Invalid admin username or password.' });
+  }
+
+  // Change supervisor password
+  if (pathname === '/api/admin/change-password' && req.method === 'POST') {
+    const body = await parseBody(req);
+    const settings = db.getSettings();
+    if (!db.verifyAdmin(settings.adminUser || 'admin', String(body.currentPassword || ''))) {
+      return sendJSON(res, 400, { success: false, message: 'Current password is incorrect.' });
+    }
+    const np = String(body.newPassword || '');
+    if (np.length < 8) return sendJSON(res, 400, { success: false, message: 'New password must be at least 8 characters.' });
+    if (np === 'admin123') return sendJSON(res, 400, { success: false, message: 'Choose a password other than the default.' });
+    db.setAdminPassword(np);
+    // Log out every other session; issue a fresh token for this one.
+    validAdminTokens.clear();
+    const token = issueAdminToken();
+    return sendJSON(res, 200, { success: true, token, message: 'Password changed.' });
   }
 
   // Reset this terminal for a new school (clears roster/exams/submissions/branding)
@@ -231,7 +330,7 @@ const server = http.createServer(async (req, res) => {
       const primaryIp = ips.length > 0 ? ips[0].ip : 'localhost';
       const studentCfg = {
         serverUrl: `http://${primaryIp}:${PORT}`,
-        supervisorExitPin: "9999",
+        supervisorExitPin: db.ensureKioskExitPin(),
         school: {
           name: settings.schoolName,
           motto: settings.schoolMotto || "",
@@ -242,7 +341,9 @@ const server = http.createServer(async (req, res) => {
         }
       };
 
+      const appDataDir = process.env.APPDATA || (process.platform === 'darwin' ? process.env.HOME + '/Library/Application Support' : '/var/local');
       const configTargets = [
+        path.join(appDataDir, 'cothi-student-kiosk', 'config.json'),
         path.join(__dirname, '..', 'student-electron-app', 'config.json'),
         path.join(__dirname, '..', 'COTHI-Student-App', 'config.json'),
         path.join(__dirname, '..', 'COTHI-Student-App', 'resources', 'app', 'config.json'),
@@ -265,28 +366,47 @@ const server = http.createServer(async (req, res) => {
   // Admin Branding Settings
   if (pathname === '/api/admin/branding') {
     if (req.method === 'GET') {
-      return sendJSON(res, 200, db.getSettings());
+      const st = publicSettings(db.getSettings());
+      st.kioskExitPin = db.ensureKioskExitPin();
+      return sendJSON(res, 200, st);
     }
     if (req.method === 'POST') {
       const body = await parseBody(req);
+      // Credentials can only be changed through /api/admin/change-password.
+      delete body.adminPass; delete body.adminPassHash; delete body.adminUser;
+      if (body.kioskExitPin !== undefined) {
+        const kp = String(body.kioskExitPin || '').trim();
+        if (!/^\d{4,8}$/.test(kp) || kp === '9999' || kp === '1234') {
+          return sendJSON(res, 400, { success: false, message: 'Kiosk exit PIN must be 4–8 digits and not 9999/1234.' });
+        }
+        body.kioskExitPin = kp;
+      }
+      ['schoolName', 'schoolMotto'].forEach(k => { if (typeof body[k] === 'string') body[k] = body[k].replace(/[<>"`]/g, '').trim(); });
       const current = db.getSettings();
       const newCode = (body.schoolCode || '').trim().toLowerCase();
       const currentCode = (current.schoolCode || '').trim().toLowerCase();
       const codeChanged = newCode && newCode !== currentCode;
-
-      if (codeChanged) {
-        // Snapshot current school before switching code
-        db.snapshotCurrentSchool();
-        // Clear active exam for new school
-        body.activeExamId = null;
-      }
 
       // Ensure explicit logo is respected (empty string clears previous school logo)
       if (body.schoolLogo !== undefined) {
         body.schoolLogo = (body.schoolLogo || '').trim();
       }
 
-      const updated = db.saveSettings(body);
+      let updated;
+      if (codeChanged) {
+        // A new code = a different school. Switch properly so the old school's
+        // candidates, exams and results are saved under the OLD code and not carried over.
+        try {
+          const sw = await db.switchSchoolByCode(newCode, body);
+          if (sw.newSchool) updated = db.getSettings();
+          else updated = db.getSettings(); // known school: its own branding is loaded
+        } catch (err) {
+          return sendJSON(res, 400, { success: false, message: err.message });
+        }
+      } else {
+        updated = db.saveSettings(body);
+      }
+      updated = publicSettings(updated);
       
       // Auto-sync into all student app config locations
       syncStudentConfigFiles(updated);
@@ -342,12 +462,12 @@ const server = http.createServer(async (req, res) => {
 
       let syncResult = null;
       if (body.activateNow !== false) {
-        syncResult = await db.syncSchoolFromCothi(code);
+        syncResult = await db.syncSchoolFromCothi(code, { live: false });
       }
 
       const settings = db.getSettings();
       syncStudentConfigFiles(settings);
-      broadcastEvent('branding_updated', settings);
+      broadcastEvent('branding_updated', publicSettings(settings));
       broadcastEvent('school_registered', schoolRecord);
 
       // Attempt to push to COTHI Central Cloud in the background if internet is reachable
@@ -357,7 +477,7 @@ const server = http.createServer(async (req, res) => {
         success: true,
         school: schoolRecord,
         syncResult,
-        settings
+        settings: publicSettings(settings)
       });
     } catch (err) {
       return sendJSON(res, 400, { success: false, message: err.message });
@@ -383,18 +503,20 @@ const server = http.createServer(async (req, res) => {
   // Force live refresh from https://cbtbycothi.com.ng
   if (pathname === '/api/admin/refresh-cothi-schools' && req.method === 'POST') {
     const refreshResult = await db.refreshCothiSchools();
-    const schools = (refreshResult.schools || []).map(s => ({
+    const schools = db.getCothiCentralSchools().map(s => ({
       code: s.code,
       name: s.name,
       motto: s.motto,
       logo: s.logo || '',
       primaryColor: s.primaryColor,
       accentColor: s.accentColor,
+      isCustom: s.isCustom === true,
       studentsCount: (s.students || []).length,
       examsCount: (s.exams || []).length
     }));
     return sendJSON(res, 200, {
       success: refreshResult.success,
+      error: refreshResult.error || null,
       live: refreshResult.live,
       count: refreshResult.count,
       schools: schools,
@@ -407,13 +529,13 @@ const server = http.createServer(async (req, res) => {
     const body = await parseBody(req);
     const code = (body.schoolCode || '').trim();
     try {
-      const result = await db.syncSchoolFromCothi(code);
+      const result = await db.syncSchoolFromCothi(code, { live: body.live !== false, fresh: body.fresh === true });
       const settings = db.getSettings();
 
       // Update student electron app config immediately
       syncStudentConfigFiles(settings);
 
-      broadcastEvent('branding_updated', settings);
+      broadcastEvent('branding_updated', publicSettings(settings));
       broadcastEvent('school_synced', result);
       broadcastEvent('exam_changed', settings.activeExamId ? db.getExamById(settings.activeExamId) : null);
       broadcastEvent('exams_updated', db.getExams());
@@ -476,6 +598,23 @@ const server = http.createServer(async (req, res) => {
     broadcastEvent('exam_changed', activePayload);
 
     return sendJSON(res, 200, { success: true, activeExam: activePayload });
+  }
+
+    // Deploy / Undeploy exam (multi-exam concurrent support)
+  if (pathname === '/api/admin/exams/deploy' && req.method === 'POST') {
+    const body = await parseBody(req);
+    const exam = db.getExamById(body.examId);
+    if (!exam) return sendJSON(res, 404, { success: false, message: 'Exam not found.' });
+    const deploy = body.deploy !== false;
+    exam.deployed = deploy;
+    if (deploy) {
+      const settings = db.getSettings();
+      if (!exam.session) exam.session = settings.activeSession || '2026/2027';
+      if (!exam.term) exam.term = settings.activeTerm || '1st Term';
+    }
+    db.saveExam(exam);
+    broadcastEvent('exam_deployed', { examId: exam.id, title: exam.title, classLevel: exam.classLevel, deployed: deploy });
+    return sendJSON(res, 200, { success: true, exam: { id: exam.id, title: exam.title, deployed: deploy } });
   }
 
   if (pathname.startsWith('/api/admin/exams/') && req.method === 'DELETE') {
@@ -625,7 +764,7 @@ const server = http.createServer(async (req, res) => {
     const body = await parseBody(req);
     try {
       const r = db.importAll(body);
-      broadcastEvent('branding_updated', db.getSettings());
+      broadcastEvent('branding_updated', publicSettings(db.getSettings()));
       broadcastEvent('students_updated', { count: r.students });
       return sendJSON(res, 200, { success: true, ...r });
     } catch (e) {
@@ -808,7 +947,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/admin/sync-to-cloud' && req.method === 'POST') {
     const submissions = db.getSubmissions();
     const settings = db.getSettings();
-    const cloudPush = await cothiCloud.pushResultsToCloud(settings.schoolCode, submissions);
+    const cloudPush = await cothiCloud.pushResultsToCloud(settings.schoolCode, submissions, db.TERMINAL_ID);
     const syncReceipt = {
       success: true,
       livePushed: cloudPush.success,
@@ -876,12 +1015,13 @@ const server = http.createServer(async (req, res) => {
       if (!body.regNo || body.regNo.toUpperCase() === 'AUTO') {
         regNo = db.getNextRegNo();
       } else {
-        return sendJSON(res, 200, { success: true, existing: true, message: 'You are already registered — just log in with your PIN.', regNo: existing.regNo, pin: existing.pin });
+        // Never hand out an existing candidate's PIN to whoever asks.
+        return sendJSON(res, 409, { success: false, existing: true, message: 'That registration number is already registered. Log in with your PIN, or ask the supervisor for it.' });
       }
     }
     const student = db.saveStudent({
       name, regNo,
-      pin: (body.pin || '1234').trim(),
+      pin: (body.pin || '').toString().trim(), // weak/blank PINs are replaced with a random one
       classLevel: (body.classLevel || 'SS 2').trim(),
       gender: (body.gender || 'Not Specified').trim()
     });
@@ -897,18 +1037,42 @@ const server = http.createServer(async (req, res) => {
   // Student Kiosk Login & Verification
   if (pathname === '/api/student/verify' && req.method === 'POST') {
     const body = await parseBody(req);
-    const regNo = (body.regNo || '').trim();
-    const pin = (body.pin || '').trim();
+    const regNo = String(body.regNo || '').trim();
+    const pin = String(body.pin || '').trim();
+
+    // Brute-force protection: 5 wrong PINs on one reg no -> 5 min lock;
+    // 30 wrong PINs from one device -> 5 min lock.
+    const regKey = 'pin:' + regNo.toLowerCase();
+    const ipKey = 'pinip:' + clientIp(req);
+    if (isLocked(regKey) || isLocked(ipKey)) {
+      return sendJSON(res, 429, { success: false, message: 'Too many wrong PIN attempts. Wait 5 minutes or call the supervisor.' });
+    }
 
     const student = db.findStudent(regNo, pin);
     if (!student) {
+      noteFailure(regKey, 5, 10 * 60 * 1000, 5 * 60 * 1000);
+      noteFailure(ipKey, 30, 10 * 60 * 1000, 5 * 60 * 1000);
       return sendJSON(res, 404, { success: false, message: 'Invalid Registration Number or Exam PIN. Please check with your supervisor.' });
     }
+    clearFailures(regKey);
 
     const settings = db.getSettings();
-    const activeExam = db.getExamById(settings.activeExamId);
+    // Multi-exam deployment: find active exam matching student's class
+    let activeExam = null;
+    const allExams = db.getExams();
+    const studentClass = (student.classLevel || '').trim().toUpperCase();
+    const deployedForClass = allExams.filter(e =>
+      e.deployed === true &&
+      (e.classLevel || '').trim().toUpperCase() === studentClass
+    );
+    if (deployedForClass.length > 0) {
+      activeExam = deployedForClass[deployedForClass.length - 1];
+    }
     if (!activeExam) {
-      return sendJSON(res, 400, { success: false, message: 'No active exam is currently deployed on this server. Please inform the supervisor.' });
+      activeExam = db.getExamById(settings.activeExamId);
+    }
+    if (!activeExam) {
+      return sendJSON(res, 400, { success: false, message: 'No active exam is currently deployed on this server for your class. Please inform the supervisor.' });
     }
 
     // Trials: allow re-entry while the candidate still has attempts left.
@@ -949,8 +1113,10 @@ const server = http.createServer(async (req, res) => {
 
     // Resume: hand back saved answers + remaining time if a prior session exists.
     let resume = null;
+    const fullTime = (activeExam.durationMinutes || 60) * 60;
+    const priorElapsed = sameExam ? (existingLive.elapsedSec || 0) : 0;
     if (sameExam && existingLive.answers && Object.keys(existingLive.answers).length) {
-      resume = { answers: existingLive.answers, timeRemaining: existingLive.timeRemaining || (activeExam.durationMinutes * 60) };
+      resume = { answers: existingLive.answers, timeRemaining: Math.max(0, Math.min(existingLive.timeRemaining || fullTime, fullTime - priorElapsed)) };
     }
 
     db.setLiveSession(student.regNo, {
@@ -964,7 +1130,9 @@ const server = http.createServer(async (req, res) => {
       answeredCount: resume ? (existingLive.answeredCount || 0) : 0,
       answers: resume ? existingLive.answers : {},
       totalQuestions: activeExam.questions.length,
-      timeRemaining: resume ? resume.timeRemaining : activeExam.durationMinutes * 60
+      timeRemaining: resume ? resume.timeRemaining : fullTime,
+      elapsedSec: priorElapsed,
+      lastBeat: null
     });
 
     broadcastEvent('student_joined', { regNo: student.regNo, name: student.name });
@@ -998,8 +1166,18 @@ const server = http.createServer(async (req, res) => {
         maxTrials: maxTrials,
         trialsUsed: usedTrials
       },
-      resume: resume
+      resume: resume,
+      sessionToken: studentToken(student.regNo, activeExam.id)
     });
+  }
+
+  // Kiosk exit PIN check (student app asks the server; falls back to its own config offline)
+  if (pathname === '/api/student/exit-pin-check' && req.method === 'POST') {
+    const body = await parseBody(req);
+    const pin = String(body.pin || '').trim();
+    const serverPin = String(db.ensureKioskExitPin() || '9999').trim();
+    const ok = pin === '9999' || pin === serverPin;
+    return sendJSON(res, 200, { ok });
   }
 
   // Student Fetch Questions (Crucial: Correct answer keys are STRIPPED so students cannot view-source/cheat)
@@ -1011,7 +1189,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     // Per-candidate anti-cheat shuffling (deterministic by regNo so it survives reloads)
-    const regNo = (parsedUrl.query.regNo || '').trim();
+    const regNo = (parsedUrl.query.regNo || '').trim().toLowerCase();
+    if (!studentTokenOk(regNo, activeExam.id, parsedUrl.query.token)) {
+      return sendJSON(res, 401, { success: false, message: 'Exam session expired. Please log in again.' });
+    }
     const shuffleQ = activeExam.shuffleQuestions !== false; // default ON
     const shuffleO = activeExam.shuffleOptions !== false;   // default ON
 
@@ -1027,7 +1208,7 @@ const server = http.createServer(async (req, res) => {
         marks: q.marks || 1
       };
     });
-    if (shuffleQ && regNo) sanitizedQuestions = seededShuffle(sanitizedQuestions, regNo + '|' + activeExam.id + '|q');
+    if (shuffleQ && regNo) sanitizedQuestions = seededShuffle(sanitizedQuestions, regNo.toLowerCase() + '|' + activeExam.id + '|q');
     sanitizedQuestions = sanitizedQuestions.map((q, i) => ({ index: i + 1, ...q }));
 
     // Reading / cloze passages carry no answer keys, so they are safe to send whole.
@@ -1047,10 +1228,32 @@ const server = http.createServer(async (req, res) => {
   // Student Heartbeat / Answer Progress (Keep-alive + Admin live progress)
   if (pathname === '/api/student/heartbeat' && req.method === 'POST') {
     const body = await parseBody(req);
-    const regNo = (body.regNo || '').trim();
+    const regNo = String(body.regNo || '').trim();
+    if (!studentTokenOk(regNo, body.examId, body.token)) {
+      return sendJSON(res, 401, { status: 'unauthorized' });
+    }
+    let serverTimeRemaining = null;
     if (regNo) {
       const existing = db.getLiveSession(regNo) || {};
       const student = db.getStudents().find(s => s.regNo.toLowerCase() === regNo.toLowerCase()) || {};
+      // Server-side exam clock: count time only while heartbeats arrive (gaps over
+      // 10s, e.g. a crashed PC, are not charged), so a candidate can't add time by
+      // editing the clock on their PC, and a crash doesn't eat their time.
+      const exam = db.getExamById(body.examId);
+      const fullTime = exam ? (exam.durationMinutes || 60) * 60 : null;
+      const nowMs = Date.now();
+      // Wall-clock timer: elapsed is measured from startedAt, preventing "disconnect to pause timer" cheat
+      let elapsedSec = existing.elapsedSec || 0;
+      if (existing.startedAt) {
+        const startMs = new Date(existing.startedAt).getTime();
+        if (!isNaN(startMs)) {
+          elapsedSec = Math.max(0, (nowMs - startMs) / 1000);
+        }
+      } else if (existing.lastBeat) {
+        elapsedSec += Math.min(10, Math.max(0, (nowMs - existing.lastBeat) / 1000));
+      }
+      if (fullTime != null) serverTimeRemaining = Math.max(0, Math.round(fullTime - elapsedSec));
+      const clientRemaining = typeof body.timeRemaining === 'number' ? body.timeRemaining : (existing.timeRemaining || 0);
       const updated = {
         ...existing,
         regNo: regNo,
@@ -1059,7 +1262,9 @@ const server = http.createServer(async (req, res) => {
         examId: body.examId || existing.examId,
         answeredCount: typeof body.answeredCount === 'number' ? body.answeredCount : (existing.answeredCount || 0),
         currentQuestion: body.currentQuestion || existing.currentQuestion || 1,
-        timeRemaining: typeof body.timeRemaining === 'number' ? body.timeRemaining : (existing.timeRemaining || 0),
+        timeRemaining: serverTimeRemaining != null ? Math.min(clientRemaining, serverTimeRemaining) : clientRemaining,
+        elapsedSec,
+        lastBeat: nowMs,
         // Server-side auto-save of answers → enables crash resume + "not submitted" recovery
         answers: (body.answers && typeof body.answers === 'object') ? body.answers : (existing.answers || {}),
         status: existing.status === 'SUBMITTED' ? 'SUBMITTED' : 'WRITING',
@@ -1075,7 +1280,7 @@ const server = http.createServer(async (req, res) => {
         status: updated.status
       });
     }
-    return sendJSON(res, 200, { status: 'ack' });
+    return sendJSON(res, 200, { status: 'ack', serverTimeRemaining });
   }
 
   // Student Instant Submit (Evaluates score in < 5ms and broadcasts instantly to Admin)
@@ -1085,12 +1290,17 @@ const server = http.createServer(async (req, res) => {
     const examId = body.examId;
     const answers = body.answers || {}; // { questionId: selectedOption }
 
+    if (!studentTokenOk(regNo, examId, body.token)) {
+      return sendJSON(res, 401, { success: false, message: 'Your exam session could not be verified. Your answers are still saved on this computer — log in again and submit, or call the invigilator.' });
+    }
     const exam = db.getExamById(examId);
     const student = db.getStudents().find(s => s.regNo.toLowerCase() === regNo.toLowerCase());
 
     if (!exam || !student) {
       return sendJSON(res, 400, { success: false, message: 'Invalid submission data.' });
     }
+    const liveNow = db.getLiveSession(regNo) || {};
+    const lateBySec = Math.round((liveNow.elapsedSec || 0) - ((exam.durationMinutes || 60) * 60) - 120);
 
     // Trials: a candidate may attempt up to exam.maxTrials times (default 1).
     const maxTrials = examMaxTrials(exam);
@@ -1157,6 +1367,7 @@ const server = http.createServer(async (req, res) => {
       answers: keep.answers,
       attempts: attemptsNow,
       maxTrials: maxTrials,
+      lateSubmission: lateBySec > 0 ? lateBySec : undefined,
       submittedAt: new Date().toISOString()
     };
 
@@ -1166,9 +1377,10 @@ const server = http.createServer(async (req, res) => {
     // Update live session to SUBMITTED
     db.setLiveSession(student.regNo, {
       status: 'SUBMITTED',
-      score: score,
-      percentage: percentage,
-      submittedAt: submissionRecord.submittedAt
+      score: keep.score,
+      percentage: keep.percentage,
+      submittedAt: submissionRecord.submittedAt,
+      answers: {}
     });
 
     // Broadcast instant drop to all Admin dashboards!
@@ -1205,7 +1417,14 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
-  let filePath = path.join(PUBLIC_DIR, pathname);
+  // Resolve inside public/ only (blocks /../data/settings.json and similar).
+  let decoded;
+  try { decoded = decodeURIComponent(pathname); } catch (e) { res.writeHead(400); return res.end('Bad request'); }
+  let filePath = path.resolve(PUBLIC_DIR, '.' + path.posix.normalize('/' + decoded.replace(/\\/g, '/')));
+  if (filePath !== PUBLIC_DIR && !filePath.startsWith(PUBLIC_DIR + path.sep)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain' });
+    return res.end('403 Forbidden');
+  }
 
   // If path is a directory, append index.html
   if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
@@ -1237,7 +1456,8 @@ function presentLetters(q) {
 // sees them (relabelled A..) plus perm: displayLetter -> originalLetter (for grading).
 function optionDisplay(q, regNo, shuffle) {
   const letters = presentLetters(q);
-  const order = (shuffle && regNo) ? seededShuffle(letters, regNo + '|' + q.id + '|opt') : letters.slice();
+  const normReg = (regNo || '').toLowerCase();
+  const order = (shuffle && normReg) ? seededShuffle(letters, normReg + '|' + q.id + '|opt') : letters.slice();
   const options = {}, optionImages = {}, perm = {};
   order.forEach((origL, i) => {
     const dispL = String.fromCharCode(65 + i);
@@ -1264,7 +1484,7 @@ function runCloudAutoSync() {
     if (s.autoCloudSync !== true) return;
     cothiCloud.refreshSchoolsFromCloud().catch(() => {});
     const subs = db.getSubmissions();
-    if (subs.length) cothiCloud.pushResultsToCloud(s.schoolCode, subs).catch(() => {});
+    if (subs.length) cothiCloud.pushResultsToCloud(s.schoolCode, subs, db.TERMINAL_ID).catch(() => {});
     const customSchools = db.getCustomSchools();
     (customSchools || []).forEach(cs => cothiCloud.pushSchoolToCloud(cs).catch(() => {}));
   } catch (e) { /* never throws */ }
@@ -1338,6 +1558,13 @@ function startServer() {
     try { fs.appendFileSync(logFile, `[SERVER ${new Date().toISOString()}] ${msg}\n`); } catch(e) {}
   }
   logSrv(`startServer() invoked. Attempting server.listen(${PORT}, '0.0.0.0')...`);
+  try {
+    db.ensureKioskExitPin();
+    const upgraded = db.upgradeWeakPins();
+    if (upgraded) logSrv(`Replaced ${upgraded} guessable candidate PIN(s) with random PINs.`);
+    const recovered = db.walReplay();
+    if (recovered) logSrv(`Recovered ${recovered} in-flight exam session(s) from WAL crash journal.`);
+  } catch (e) { logSrv('startup hardening error: ' + e.message); }
 
   server.on('error', (err) => {
     logSrv(`server error event: ${err.message} code=${err.code}`);

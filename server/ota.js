@@ -174,6 +174,7 @@ async function applyUpdate() {
   };
 
   addLog('Starting Over-The-Air (OTA) System Update...');
+  let preUpdateBackupDir = null;
 
   const isOnline = await testInternetConnectivity();
   if (!isOnline) {
@@ -187,13 +188,13 @@ async function applyUpdate() {
     const backupDir = path.join(ROOT_DIR, 'data', 'backups', `pre-ota-${Date.now()}`);
     if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
     
-    const criticalFiles = ['custom_schools.json', 'settings.json', 'submissions.json', 'students.json'];
-    for (const file of criticalFiles) {
-      const src = path.join(ROOT_DIR, 'data', file);
-      if (fs.existsSync(src)) {
-        fs.copyFileSync(src, path.join(backupDir, file));
-      }
+    // Back up EVERY data file (not just four), so it can be restored after the pull.
+    const dataDir = path.join(ROOT_DIR, 'data');
+    for (const file of (fs.existsSync(dataDir) ? fs.readdirSync(dataDir) : [])) {
+      const src = path.join(dataDir, file);
+      if (fs.statSync(src).isFile()) fs.copyFileSync(src, path.join(backupDir, file));
     }
+    preUpdateBackupDir = backupDir;
     addLog(`Local student submissions and school directory safely backed up to ${path.basename(backupDir)}.`);
   } catch (backupErr) {
     addLog(`Warning: Backup creation notice: ${backupErr.message}`);
@@ -201,40 +202,79 @@ async function applyUpdate() {
 
   // Step 2: Code update via Git or Cloud
   let gitSuccess = false;
+  let cloudOk = true;
   try {
     await runCmd('git --version');
     addLog('Executing Git pull from repository...');
-    // Stash any uncommitted local data changes safely
-    try { await runCmd('git stash'); } catch (_) {}
-    const pullOut = await runCmd(`git pull --no-edit origin ${GITHUB_BRANCH}`);
-    addLog(`Git update output: ${pullOut}`);
-    gitSuccess = true;
+    // Set local changes aside, pull, then put them back. (Previously the stash was
+    // never restored, so exam data tracked in git appeared to vanish after an update.)
+    let stashed = false;
+    try {
+      const before = await runCmd('git stash list');
+      await runCmd('git stash push -m cothi-ota-autostash');
+      const after = await runCmd('git stash list');
+      stashed = after !== before;
+    } catch (_) {}
+    try {
+      const pullOut = await runCmd(`git pull --no-edit origin ${GITHUB_BRANCH}`);
+      addLog(`Git update output: ${pullOut}`);
+      gitSuccess = true;
+    } finally {
+      if (stashed) {
+        try { await runCmd('git stash pop'); addLog('Local changes restored after update.'); }
+        catch (popErr) { addLog('WARNING: could not re-apply local changes automatically. They are kept in "git stash" (cothi-ota-autostash); a backup was also made in data/backups.'); }
+      }
+    }
   } catch (err) {
     addLog(`Git pull skipped or unavailable: ${err.stderr || err.message || 'Not a git working copy'}`);
+  }
+
+  // Step 2b: data/ is no longer tracked in git. On a PC whose copy still tracked it,
+  // the pull removes those files — put back anything that went missing.
+  if (preUpdateBackupDir) {
+    try {
+      const dataDir = path.join(ROOT_DIR, 'data');
+      if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+      let restored = 0;
+      for (const file of fs.readdirSync(preUpdateBackupDir)) {
+        const dst = path.join(dataDir, file);
+        if (!fs.existsSync(dst)) { fs.copyFileSync(path.join(preUpdateBackupDir, file), dst); restored++; }
+      }
+      if (restored) addLog(`Restored ${restored} data file(s) from the pre-update backup.`);
+    } catch (rErr) { addLog(`WARNING: data restore check failed: ${rErr.message}`); }
   }
 
   // Step 3: Refresh COTHI Cloud Question Banks and Schools
   try {
     addLog('Syncing latest exam questions and school directories from COTHI Cloud...');
-    const cloudSchools = await db.refreshSchoolsFromCloud();
-    addLog(`COTHI Central directory refreshed: ${cloudSchools ? cloudSchools.length : 0} schools synced.`);
-    
-    const currentSchoolId = db.getCurrentSchoolId();
-    if (currentSchoolId) {
-      const schoolResult = await db.syncSchoolFromCothi(currentSchoolId);
-      addLog(`School [${currentSchoolId}] exam bank updated: ${schoolResult.examsCount} exams now available.`);
+    const refresh = await db.refreshCothiSchools();
+    if (!refresh.live) {
+      cloudOk = false;
+      addLog(`Cloud download FAILED: ${refresh.error || 'unknown error'}. Using last saved copy.`);
+    } else {
+      addLog(`COTHI Central directory refreshed: ${refresh.count} schools downloaded.`);
+      const currentCode = (db.getSettings().schoolCode || '').trim();
+      if (currentCode && currentCode !== 'cothi') {
+        const schoolResult = await db.syncSchoolFromCothi(currentCode, { live: false });
+        addLog(`School [${currentCode}] exam bank updated: ${schoolResult.examsCount} exams now available.`);
+      }
     }
   } catch (cloudErr) {
-    addLog(`Cloud questions sync note: ${cloudErr.message}`);
+    cloudOk = false;
+    addLog(`Cloud questions sync FAILED: ${cloudErr.message}`);
   }
 
   // Step 4: Push any offline created schools or pending submissions to cloud
   try {
     addLog('Pushing any local submissions or offline registered schools to COTHI Cloud...');
-    const syncRes = await cothiCloud.runCloudAutoSync();
-    addLog(`Cloud auto-sync completed: ${syncRes.synced} items uploaded.`);
+    const st = db.getSettings();
+    const subs = db.getSubmissions();
+    const push = subs.length ? await cothiCloud.pushResultsToCloud(st.schoolCode, subs) : { success: true };
+    if (!push.success) cloudOk = false;
+    addLog(subs.length ? (push.success ? `Uploaded ${subs.length} result(s).` : `Result upload FAILED (${push.error || 'HTTP ' + push.statusCode}).`) : 'No results to upload.');
   } catch (syncErr) {
-    addLog(`Upload sync note: ${syncErr.message}`);
+    cloudOk = false;
+    addLog(`Upload sync FAILED: ${syncErr.message}`);
   }
 
   // Step 5: Keep distribution app synced if running in dev folder
@@ -261,13 +301,14 @@ async function applyUpdate() {
     }
   } catch (_) {}
 
-  addLog('✅ OTA Update and Cloud Sync completed successfully!');
+  const allOk = cloudOk;
+  addLog(allOk ? '✅ Update and cloud sync completed.' : '⚠️ Update finished with problems — see the lines marked FAILED above.');
 
   return {
-    success: true,
+    success: allOk,
     gitUpdated: gitSuccess,
     log: statusLog,
-    message: 'System updated successfully. All questions, schools, and code are now in sync.'
+    message: allOk ? 'System updated. Questions, schools and code are in sync.' : 'Update finished, but some steps failed. Check the log.'
   };
 }
 

@@ -2,6 +2,53 @@ const fs = require('fs');
 const path = require('path');
 const cothiCloud = require('./cothi-cloud');
 
+const crypto = require('crypto');
+const cleanText = cothiCloud.cleanText;
+
+// ---- PIN / student hygiene ---------------------------------------------------
+// A PIN is "weak" if it is empty, 1234, or the school's own code (the old default,
+// which every candidate could guess).
+function isWeakPin(pin, code) {
+  const p = String(pin == null ? '' : pin).trim().toLowerCase();
+  if (p === 'godscare' || p === 'immaculate' || p === 'icss' || (p.length >= 6 && /[a-z]/i.test(p))) return false;
+if (!p || p === '1234' || p === '0000') return true;
+  const c = String(code || '').trim().toLowerCase();
+  if (c && cothiCloud.aliasesFor(c).includes(p)) return true;
+  return false;
+}
+function randomPin() {
+  let p;
+  do { p = String(crypto.randomInt(1000, 10000)); } while (p === '1234');
+  return p;
+}
+function cleanRegNo(v) { return String(v == null ? '' : v).replace(/[^A-Za-z0-9/_.\-]/g, '').slice(0, 40); }
+function sanitizeStudent(st, code) {
+  const out = { ...st };
+  out.name = cleanText(st.name).slice(0, 120);
+  out.regNo = cleanRegNo(st.regNo);
+  out.classLevel = cleanText(st.classLevel || 'SS 2').slice(0, 30);
+  out.gender = cleanText(st.gender || 'Not Specified').slice(0, 20);
+  if (isWeakPin(st.pin, code)) out.pin = randomPin();
+  else out.pin = String(st.pin).trim();
+  return out;
+}
+
+// ---- Admin password hashing (scrypt) -----------------------------------------
+function hashPassword(pw) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(String(pw), salt, 32).toString('hex');
+  return `scrypt$${salt}$${hash}`;
+}
+function checkPasswordHash(pw, stored) {
+  try {
+    const [alg, salt, hash] = String(stored || '').split('$');
+    if (alg !== 'scrypt' || !salt || !hash) return false;
+    const got = crypto.scryptSync(String(pw), salt, 32);
+    const want = Buffer.from(hash, 'hex');
+    return want.length === got.length && crypto.timingSafeEqual(got, want);
+  } catch (e) { return false; }
+}
+
 let DATA_DIR = path.join(__dirname, '..', 'data');
 if (DATA_DIR.includes('app.asar')) {
   DATA_DIR = path.join(path.dirname(process.execPath), 'data');
@@ -30,11 +77,75 @@ function readJSON(file, fallback) {
 
 function writeJSON(file, data) {
   try {
-    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8');
+    const content = JSON.stringify(data, null, 2);
+    const tmpFile = file + '.tmp.' + process.pid + '.' + Date.now();
+    fs.writeFileSync(tmpFile, content, 'utf-8');
+    fs.renameSync(tmpFile, file);
   } catch (err) {
     console.error(`Error writing ${file}:`, err);
+    try {
+      const tmp = file + '.tmp.' + process.pid + '.' + Date.now();
+      if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+    } catch (e) {}
   }
 }
+
+// ---- In-Flight Write-Ahead Log (crash-safe answer preservation) ---------------
+const WAL_FILE = path.join(DATA_DIR, 'in_flight_journal.jsonl');
+
+function walAppend(regNo, sessionData) {
+  try {
+    const entry = JSON.stringify({ ts: Date.now(), regNo: (regNo || '').trim().toLowerCase(), d: sessionData }) + '\n';
+    fs.appendFileSync(WAL_FILE, entry, 'utf-8');
+  } catch (e) {
+    console.error('WAL append error:', e.message);
+  }
+}
+
+function walReplay() {
+  try {
+    if (!fs.existsSync(WAL_FILE)) return 0;
+    const lines = fs.readFileSync(WAL_FILE, 'utf-8').split('\n').filter(l => l.trim());
+    let recovered = 0;
+    const latest = new Map();
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry.regNo && entry.d) latest.set(entry.regNo, entry.d);
+      } catch (e) {}
+    }
+    for (const [regNo, data] of latest) {
+      if (data.status !== 'SUBMITTED' && data.answers && Object.keys(data.answers).length > 0) {
+        liveSessions.set(regNo, { ...data, lastSeen: Date.now() });
+        recovered++;
+      }
+    }
+    if (recovered > 0) console.log(`[WAL RECOVERY] Restored ${recovered} in-flight exam session(s) from crash journal.`);
+    return recovered;
+  } catch (e) {
+    console.error('WAL replay error:', e.message);
+    return 0;
+  }
+}
+
+function walClear() {
+  try { if (fs.existsSync(WAL_FILE)) fs.writeFileSync(WAL_FILE, '', 'utf-8'); } catch (e) {}
+}
+
+// ---- Terminal Identity (for partitioned cloud sync) ----------------------------
+const TERMINAL_ID_FILE = path.join(DATA_DIR, 'terminal_id.json');
+function getTerminalId() {
+  try {
+    if (fs.existsSync(TERMINAL_ID_FILE)) {
+      const j = JSON.parse(fs.readFileSync(TERMINAL_ID_FILE, 'utf-8'));
+      if (j && j.id) return j.id;
+    }
+  } catch (e) {}
+  const id = 'T' + crypto.randomBytes(4).toString('hex').toUpperCase();
+  try { fs.writeFileSync(TERMINAL_ID_FILE, JSON.stringify({ id, createdAt: new Date().toISOString() }), 'utf-8'); } catch (e) {}
+  return id;
+}
+const TERMINAL_ID = getTerminalId();
 
 const defaultSettings = {
   schoolName: "COTHIGLOBAL Examination Portal",
@@ -62,6 +173,9 @@ const db = {
     writeJSON(CUSTOM_SCHOOLS_FILE, schools);
   },
 
+  // A local record for one school code. Holds this terminal's own copy of the school
+  // (roster, exams, results) so switching schools never loses anything. It does NOT
+  // override fresh cloud data any more: see mergeWithCloud().
   saveSchoolToRegistry(schoolData) {
     if (!schoolData || !schoolData.name) {
       throw new Error('School name is required.');
@@ -73,52 +187,49 @@ const db = {
 
     const customSchools = this.getCustomSchools();
     const existingIdx = customSchools.findIndex(s => s.code && s.code.toLowerCase() === cleanCode);
+    const prev = existingIdx >= 0 ? customSchools[existingIdx] : {};
 
     const schoolRecord = {
-      id: schoolData.id || `school_${cleanCode}`,
+      ...prev,
+      id: schoolData.id || prev.id || `school_${cleanCode}`,
       code: cleanCode,
-      name: (schoolData.name || '').trim(),
-      motto: (schoolData.motto || schoolData.schoolMotto || 'Excellence in Learning').trim(),
-      primaryColor: schoolData.primaryColor || '#2563eb',
-      accentColor: schoolData.accentColor || '#f8fafc',
-      logo: schoolData.logo || schoolData.schoolLogo || '',
-      isCustom: true,
-      students: Array.isArray(schoolData.students) ? schoolData.students : (existingIdx >= 0 ? customSchools[existingIdx].students || [] : []),
-      exams: Array.isArray(schoolData.exams) ? schoolData.exams : (existingIdx >= 0 ? customSchools[existingIdx].exams || [] : []),
+      name: cleanText(schoolData.name),
+      motto: cleanText(schoolData.motto || schoolData.schoolMotto || 'Excellence in Learning'),
+      primaryColor: schoolData.primaryColor || prev.primaryColor || '#2563eb',
+      accentColor: schoolData.accentColor || prev.accentColor || '#f8fafc',
+      logo: schoolData.logo !== undefined ? schoolData.logo : (schoolData.schoolLogo !== undefined ? schoolData.schoolLogo : (prev.logo || '')),
+      // Only schools registered on this terminal are "custom". Snapshots of cloud
+      // schools used to be flagged custom too, which froze them forever.
+      isCustom: schoolData.isCustom === true || prev.isCustom === true && !this._isCloudCode(cleanCode),
+      students: Array.isArray(schoolData.students) ? schoolData.students : (prev.students || []),
+      exams: Array.isArray(schoolData.exams) ? schoolData.exams : (prev.exams || []),
+      submissions: Array.isArray(schoolData.submissions) ? schoolData.submissions : (prev.submissions || []),
+      activeExamId: schoolData.activeExamId !== undefined ? schoolData.activeExamId : (prev.activeExamId || null),
       updatedAt: new Date().toISOString()
     };
 
-    if (existingIdx >= 0) {
-      customSchools[existingIdx] = { ...customSchools[existingIdx], ...schoolRecord };
-    } else {
-      customSchools.push(schoolRecord);
-    }
+    if (existingIdx >= 0) customSchools[existingIdx] = schoolRecord;
+    else customSchools.push(schoolRecord);
     this.saveCustomSchools(customSchools);
-
-    // Also upsert into cothi_cache.json so it is visible across all directory views
-    const cacheFile = path.join(DATA_DIR, 'cothi_cache.json');
-    const cachedSchools = readJSON(cacheFile, []);
-    const cacheIdx = cachedSchools.findIndex(s => s.code && s.code.toLowerCase() === cleanCode);
-    if (cacheIdx >= 0) {
-      cachedSchools[cacheIdx] = { ...cachedSchools[cacheIdx], ...schoolRecord };
-    } else {
-      cachedSchools.push(schoolRecord);
-    }
-    writeJSON(cacheFile, cachedSchools);
-
     return schoolRecord;
+  },
+
+  _isCloudCode(code) {
+    const c = (code || '').toLowerCase();
+    return cothiCloud.loadCachedSchools().some(s => (s.code || '').toLowerCase() === c);
   },
 
   deleteSchoolFromRegistry(schoolCode) {
     const cleanCode = (schoolCode || '').trim().toLowerCase();
     if (!cleanCode) return false;
 
-    // 1. Remove from custom_schools.json
+    // 1. Remove this terminal's local copy
     let custom = this.getCustomSchools();
     custom = custom.filter(s => (s.code || '').toLowerCase() !== cleanCode);
     this.saveCustomSchools(custom);
 
-    // 2. Remove from cothi_cache.json
+    // 2. Remove from the cloud cache (it comes back on the next cloud refresh if it
+    //    still exists on cbtbycothi.com.ng)
     const cacheFile = path.join(DATA_DIR, 'cothi_cache.json');
     let cached = readJSON(cacheFile, []);
     cached = cached.filter(s => (s.code || '').toLowerCase() !== cleanCode);
@@ -127,133 +238,217 @@ const db = {
     return true;
   },
 
+  // Save the ACTIVE school's working files (roster, exams, results, active exam)
+  // into its own local record before anything switches.
   snapshotCurrentSchool() {
     try {
       const cur = this.getSettings();
       const code = (cur.schoolCode || '').trim().toLowerCase();
-      if (!code || (code === 'cothi' && !cur.schoolName)) return;
-
-      const currentStudents = this.getStudents();
-      const currentExams = this.getExams();
+      if (!code || code === 'cothi') return;
 
       this.saveSchoolToRegistry({
         code: code,
-        name: cur.schoolName,
+        name: cur.schoolName || code.toUpperCase(),
         motto: cur.schoolMotto,
-        logo: cur.schoolLogo,
+        logo: cur.schoolLogo || '',
         primaryColor: cur.primaryColor,
         accentColor: cur.accentColor,
-        students: currentStudents,
-        exams: currentExams
+        students: this.getStudents(),
+        exams: this.getExams(),
+        submissions: this.getSubmissions(),
+        activeExamId: cur.activeExamId || null
       });
     } catch (err) {
       console.warn('snapshotCurrentSchool error:', err.message);
     }
   },
 
+  // Directory shown in the console: cloud schools, plus local-only schools.
+  // For a cloud school the cloud's branding wins; local values only fill blanks.
   getCothiCentralSchools() {
     const cached = cothiCloud.loadCachedSchools();
     const custom = this.getCustomSchools();
 
     const map = new Map();
-    // 1. Cloud-cached schools
     cached.forEach(s => {
       const key = (s.code || s.id || '').toLowerCase();
-      if (key) map.set(key, s);
+      if (key) map.set(key, { ...s, fromCloud: true, isCustom: false });
     });
-    // 2. Custom & locally registered schools (always preserved!)
     custom.forEach(s => {
       const key = (s.code || s.id || '').toLowerCase();
-      if (key) {
-        const existing = map.get(key) || {};
-        map.set(key, { ...existing, ...s });
+      if (!key) return;
+      const cloud = map.get(key);
+      if (!cloud) {
+        map.set(key, { ...s, fromCloud: false, isCustom: true });
+      } else {
+        const merged = this.mergeWithCloud(cloud, s, key);
+        map.set(key, {
+          ...cloud,
+          logo: cloud.logo || s.logo || '',
+          motto: cloud.motto || s.motto || '',
+          students: merged.students,
+          exams: merged.exams
+        });
       }
     });
 
     return Array.from(map.values());
   },
 
+  // Combine fresh cloud data with this terminal's local copy of the same school.
+  //  - Students: cloud record, keeping the local PIN, photo and class; local-only kept.
+  //  - Exams: cloud content wins (so cloud corrections arrive); local schedule/session/
+  //    trials settings are kept; local-only exams kept; exams stamped with ANOTHER
+  //    school's code are dropped (this is what made old schools "stick").
+  mergeWithCloud(cloud, local, code) {
+    const aliases = cothiCloud.aliasesFor((code || '').toLowerCase());
+    const cloudStudents = (cloud && cloud.students) || [];
+    const localStudents = (local && local.students) || [];
+    const byReg = new Map();
+    cloudStudents.forEach(st => { if (st && st.regNo) byReg.set(String(st.regNo).toLowerCase(), { ...st }); });
+    localStudents.forEach(st => {
+      if (!st || !st.regNo) return;
+      const k = String(st.regNo).toLowerCase();
+      const c = byReg.get(k);
+      if (!c) { byReg.set(k, { ...st }); return; }
+      byReg.set(k, {
+        ...c,
+        pin: !isWeakPin(st.pin, code) ? st.pin : c.pin,
+        photo: st.photo || c.photo,
+        classLevel: st.classLevel || c.classLevel,
+        gender: (st.gender && st.gender !== 'Not Specified') ? st.gender : c.gender
+      });
+    });
+
+    const keepLocal = ['session', 'term', 'scheduledStart', 'scheduledEnd', 'shuffleQuestions', 'shuffleOptions', 'maxTrials', 'passPercentage'];
+    const byId = new Map();
+    ((cloud && cloud.exams) || []).forEach(ex => { if (ex && ex.id) byId.set(ex.id, { ...ex, schoolCode: code }); });
+    ((local && local.exams) || []).forEach(ex => {
+      if (!ex || !ex.id) return;
+      if (ex.schoolCode && !aliases.includes(String(ex.schoolCode).toLowerCase())) return; // another school's exam
+      const c = byId.get(ex.id);
+      if (!c) { byId.set(ex.id, ex); return; }
+      const merged = { ...c };
+      keepLocal.forEach(f => { if (ex[f] !== undefined) merged[f] = ex[f]; });
+      if ((!c.questions || c.questions.length === 0) && ex.questions && ex.questions.length) merged.questions = ex.questions;
+      if (!c.passages && ex.passages) merged.passages = ex.passages;
+      byId.set(ex.id, merged);
+    });
+
+    return { students: Array.from(byReg.values()), exams: Array.from(byId.values()) };
+  },
+
   async refreshCothiSchools() {
     return await cothiCloud.refreshSchoolsFromCloud();
   },
 
-  async syncSchoolFromCothi(schoolCode) {
+  // Make `schoolCode` the active school on this terminal.
+  //   options.live  - try a fresh download from cbtbycothi.com.ng first (default true)
+  //   options.fresh - ignore this terminal's local copy of the roster/exams and take
+  //                   the cloud version as-is (results are still kept)
+  async syncSchoolFromCothi(schoolCode, options = {}) {
+    const live = options.live !== false;
+    const fresh = options.fresh === true;
     const cleanCode = (schoolCode || '').trim().toLowerCase();
-    const codesToMatch = [cleanCode];
-    if (cleanCode === 'immaculate') codesToMatch.push('icss');
-    if (cleanCode === 'icss') codesToMatch.push('immaculate');
-    if (cleanCode === 'godscare') codesToMatch.push('god');
-    if (cleanCode === 'god') codesToMatch.push('godscare');
-    if (cleanCode === 'excel_enugu') codesToMatch.push('excel', 'excel_royal');
+    if (!cleanCode) throw new Error('School code is required.');
+    const codesToMatch = cothiCloud.aliasesFor(cleanCode);
 
-    // Snapshot outgoing active school data so candidates and exams are never lost
+    // Save the outgoing school (roster, exams AND results) before switching.
     this.snapshotCurrentSchool();
 
-    let schools = this.getCothiCentralSchools();
-
-    let found = schools.find(s => codesToMatch.includes((s.code || '').toLowerCase()) || codesToMatch.includes((s.id || '').replace('school_', '').toLowerCase()));
-
-    if (!found) {
-      found = schools.find(s => s.name && codesToMatch.some(c => s.name.toLowerCase().includes(c)));
+    let cloudNote = null;
+    if (live) {
+      const r = await cothiCloud.refreshSchoolsFromCloud();
+      if (!r.live) cloudNote = r.offlineNotice || 'Could not reach COTHI Cloud; used the last saved copy.';
     }
 
-    // If not found in local cache, attempt a live fetch from cbtbycothi.com.ng
-    if (!found) {
-      console.log(`School "${schoolCode}" not in local cache. Attempting live fetch from cbtbycothi.com.ng...`);
-      try {
-        const refreshResult = await cothiCloud.refreshSchoolsFromCloud();
-        schools = this.getCothiCentralSchools();
-        found = schools.find(s => codesToMatch.includes((s.code || '').toLowerCase()) || codesToMatch.includes((s.id || '').replace('school_', '').toLowerCase()))
-          || schools.find(s => s.name && codesToMatch.some(c => s.name.toLowerCase().includes(c)));
-      } catch (err) {
-        console.warn('Live fetch failed during school sync:', err.message);
-      }
+    const cloudList = cothiCloud.loadCachedSchools();
+    const exact = list => list.find(s => (s.code || '').toLowerCase() === cleanCode)
+      || list.find(s => codesToMatch.includes((s.code || '').toLowerCase()))
+      || list.find(s => codesToMatch.includes((s.id || '').replace('school_', '').toLowerCase()));
+    const cloud = exact(cloudList) || null;
+    const local = exact(this.getCustomSchools()) || null;
+
+    if (!cloud && !local) {
+      throw new Error(`School with code "${schoolCode}" was not found on COTHI Cloud or on this terminal.` + (cloudNote ? ' ' + cloudNote : ''));
     }
 
-    if (!found) {
-      throw new Error(`School with code "${schoolCode}" was not found in school directory.`);
+    const code = ((cloud && cloud.code) || (local && local.code) || cleanCode).toLowerCase();
+    let localForMerge = local;
+    if (fresh && cloud) {
+      // Fresh download: take the cloud roster/exams as-is, but keep PINs and photos
+      // already issued on this terminal for students who are still on the cloud roster.
+      const cloudRegs = new Set((cloud.students || []).map(s => String(s.regNo || '').toLowerCase()));
+      localForMerge = {
+        students: ((local && local.students) || []).filter(s => cloudRegs.has(String(s.regNo || '').toLowerCase()))
+          .map(s => ({ regNo: s.regNo, pin: s.pin, photo: s.photo })),
+        exams: []
+      };
     }
+    const merged = cloud
+      ? this.mergeWithCloud(cloud, localForMerge, code)
+      : { students: (local.students || []), exams: (local.exams || []).filter(ex => !ex.schoolCode || codesToMatch.includes(String(ex.schoolCode).toLowerCase())) };
 
-    // Check if this school has local custom data
-    const customMatch = this.getCustomSchools().find(s => codesToMatch.includes((s.code || '').toLowerCase()));
-    const studentsToUse = (customMatch && Array.isArray(customMatch.students))
-      ? customMatch.students
-      : (found.students || []);
-    const examsToUse = (customMatch && Array.isArray(customMatch.exams))
-      ? customMatch.exams
-      : (found.exams || []);
+    const students = merged.students.map(st => sanitizeStudent(st, code));
+    const exams = merged.exams;
+    const submissions = (local && Array.isArray(local.submissions)) ? local.submissions : [];
+    const src = cloud || local;
+    const prevActive = local && local.activeExamId && exams.some(e => e.id === local.activeExamId) ? local.activeExamId : null;
 
-    const logoToUse = (customMatch && customMatch.logo !== undefined)
-      ? customMatch.logo
-      : (found.logo || '');
+    // 1. Branding
+    this.saveSettings({
+      schoolName: cleanText(src.name),
+      schoolMotto: cleanText(src.motto || ''),
+      schoolCode: code,
+      primaryColor: src.primaryColor || '#2563eb',
+      accentColor: src.accentColor || '#f8fafc',
+      schoolLogo: (cloud && cloud.logo) || (local && local.logo) || '',
+      activeExamId: prevActive || (exams.length > 0 ? exams[0].id : null)
+    }, false);
 
-    // 1. Update Settings / Branding
-    const newSettings = this.saveSettings({
-      schoolName: found.name,
-      schoolMotto: found.motto,
-      schoolCode: found.code,
-      primaryColor: found.primaryColor || '#2563eb',
-      accentColor: found.accentColor || '#f8fafc',
-      schoolLogo: logoToUse,
-      activeExamId: examsToUse && examsToUse.length > 0 ? examsToUse[0].id : null
-    }, false); // pass false so we don't trigger recursive registry write
-
-    // 2. Overwrite / Sync Students for this school
-    writeJSON(STUDENTS_FILE, studentsToUse);
-
-    // 3. Overwrite / Sync Exams for this school
-    writeJSON(EXAMS_FILE, examsToUse);
-
-    // 4. Reset submissions and live monitoring sessions for this fresh school sync
-    writeJSON(SUBMISSIONS_FILE, []);
+    // 2. Working files for this school only (previous school's files are fully replaced)
+    writeJSON(STUDENTS_FILE, students);
+    writeJSON(EXAMS_FILE, exams);
+    writeJSON(SUBMISSIONS_FILE, submissions);
     liveSessions.clear();
+
+    // 3. Keep the local record in step
+    this.snapshotCurrentSchool();
 
     return {
       success: true,
-      school: found,
-      studentsCount: studentsToUse.length,
-      examsCount: examsToUse.length
+      school: { code, name: src.name, motto: src.motto, logo: (cloud && cloud.logo) || (local && local.logo) || '' },
+      fromCloud: !!cloud,
+      liveDownload: live && !cloudNote,
+      cloudNote,
+      studentsCount: students.length,
+      examsCount: exams.length,
+      submissionsCount: submissions.length
     };
+  },
+
+  // Admin typed a new school code in Branding. Treat it as a real school switch so the
+  // previous school's roster/exams don't get carried over under the new code.
+  async switchSchoolByCode(newCode, branding) {
+    const code = (newCode || '').trim().toLowerCase();
+    const known = this.getCothiCentralSchools().some(s => (s.code || '').toLowerCase() === code);
+    if (known) {
+      const r = await this.syncSchoolFromCothi(code, { live: false });
+      return r;
+    }
+    // Brand-new school: start with empty working files.
+    this.snapshotCurrentSchool();
+    writeJSON(STUDENTS_FILE, []);
+    writeJSON(EXAMS_FILE, []);
+    writeJSON(SUBMISSIONS_FILE, []);
+    liveSessions.clear();
+    this.saveSettings({ ...branding, schoolCode: code, activeExamId: null }, false);
+    this.saveSchoolToRegistry({
+      code, name: branding.schoolName || code.toUpperCase(), motto: branding.schoolMotto,
+      logo: branding.schoolLogo || '', primaryColor: branding.primaryColor, accentColor: branding.accentColor,
+      isCustom: true, students: [], exams: [], submissions: [], activeExamId: null
+    });
+    return { success: true, newSchool: true };
   },
 
   getSettings() {
@@ -275,22 +470,10 @@ const db = {
 
     writeJSON(SETTINGS_FILE, updated);
 
-    // Automatically ensure this school is preserved in the persistent school registry
+    // Keep this school's local record up to date (same school code only — a code
+    // change goes through switchSchoolByCode so rosters never cross schools).
     if (persistToRegistry && updated.schoolName && updated.schoolCode) {
-      try {
-        this.saveSchoolToRegistry({
-          name: updated.schoolName,
-          code: updated.schoolCode,
-          motto: updated.schoolMotto,
-          logo: updated.schoolLogo,
-          primaryColor: updated.primaryColor,
-          accentColor: updated.accentColor,
-          students: this.getStudents(),
-          exams: this.getExams()
-        });
-      } catch (err) {
-        console.warn('Auto saveSchoolToRegistry failed:', err.message);
-      }
+      this.snapshotCurrentSchool();
     }
 
     return updated;
@@ -423,11 +606,13 @@ const db = {
       if (s.regNo.toLowerCase() !== (regNo || '').trim().toLowerCase()) return false;
       // Exact PIN match only. Records with no stored PIN fall back to the default "1234".
       // (The previous 1234 / schoolCode / regNo bypasses let any candidate log in as anyone.)
-      const sPin = (s.pin ? s.pin : '1234').trim().toLowerCase();
-      return cleanPin !== '' && cleanPin === sPin;
+      // Exact PIN match only. A record with no PIN cannot log in (no silent "1234").
+      const sPin = String(s.pin || '').trim().toLowerCase();
+      return cleanPin !== '' && sPin !== '' && cleanPin === sPin;
     });
   },
   saveStudent(student) {
+    student = sanitizeStudent(student, this.getSettings().schoolCode);
     if (!student.regNo || !student.regNo.trim() || student.regNo.trim().toUpperCase() === 'AUTO') {
       student.regNo = this.getNextRegNo();
     }
@@ -453,7 +638,7 @@ const db = {
     if (!Array.isArray(incomingList)) return { added: 0, updated: 0, total: 0 };
     const students = this.getStudents();
     const settings = this.getSettings();
-    const defaultPin = settings.schoolCode || '1234';
+    const code = settings.schoolCode;
 
     let added = 0;
     let updated = 0;
@@ -466,17 +651,19 @@ const db = {
         regNo = this.getNextRegNo();
       }
 
-      const studentObj = {
+      const studentObj = sanitizeStudent({
         name: name,
         regNo: regNo,
         classLevel: (raw.classLevel || raw.class || 'SS 2').trim(),
-        pin: (raw.pin || defaultPin).trim(),
+        pin: raw.pin ? String(raw.pin).trim() : '',
         gender: (raw.gender || 'Not Specified').trim()
-      };
+      }, code);
 
       const existingIndex = students.findIndex(s => s.regNo.toLowerCase() === regNo.toLowerCase());
       if (existingIndex >= 0) {
-        students[existingIndex] = { ...students[existingIndex], ...studentObj };
+        // Re-uploading a roster must not reset a PIN already issued unless a new one is given.
+      const keepPin = !raw.pin && students[existingIndex].pin && !isWeakPin(students[existingIndex].pin, code);
+      students[existingIndex] = { ...students[existingIndex], ...studentObj, ...(keepPin ? { pin: students[existingIndex].pin } : {}) };
         updated++;
       } else {
         students.push(studentObj);
@@ -556,7 +743,7 @@ const db = {
     return {
       version: 2,
       exportedAt: new Date().toISOString(),
-      settings: this.getSettings(),
+      settings: (() => { const st = { ...this.getSettings() }; delete st.adminPass; delete st.adminPassHash; return st; })(),
       students: this.getStudents(),
       exams: this.getExams(),
       submissions: this.getSubmissions(),
@@ -565,19 +752,20 @@ const db = {
   },
   importAll(bundle) {
     if (!bundle || typeof bundle !== 'object') throw new Error('Invalid or empty backup file.');
-    if (bundle.settings && typeof bundle.settings === 'object') writeJSON(SETTINGS_FILE, bundle.settings);
+    if (bundle.settings && typeof bundle.settings === 'object') {
+      // Never let a backup file replace this terminal's supervisor login.
+      const cur = this.getSettings();
+      const next = { ...bundle.settings };
+      ['adminUser', 'adminPass', 'adminPassHash', 'kioskExitPin'].forEach(k => {
+        if (cur[k] !== undefined) next[k] = cur[k]; else delete next[k];
+      });
+      writeJSON(SETTINGS_FILE, next);
+    }
     if (Array.isArray(bundle.students)) writeJSON(STUDENTS_FILE, bundle.students);
     if (Array.isArray(bundle.exams)) writeJSON(EXAMS_FILE, bundle.exams);
     if (Array.isArray(bundle.submissions)) writeJSON(SUBMISSIONS_FILE, bundle.submissions);
     if (Array.isArray(bundle.customSchools)) {
       writeJSON(CUSTOM_SCHOOLS_FILE, bundle.customSchools);
-      // Merge into cothi_cache.json as well
-      const cacheFile = path.join(DATA_DIR, 'cothi_cache.json');
-      const cached = readJSON(cacheFile, []);
-      const map = new Map();
-      cached.forEach(s => { if (s.code) map.set(s.code.toLowerCase(), s); });
-      bundle.customSchools.forEach(cs => { if (cs.code) map.set(cs.code.toLowerCase(), cs); });
-      writeJSON(cacheFile, Array.from(map.values()));
     }
     return {
       students: (bundle.students || []).length,
@@ -642,20 +830,65 @@ const db = {
       };
     });
   },
-  setLiveSession(regNo, data) {
+    setLiveSession(regNo, data) {
     const key = (regNo || '').trim().toLowerCase();
     if (!key) return;
     const existing = liveSessions.get(key) || {};
-    liveSessions.set(key, {
+    const merged = {
       ...existing,
       ...data,
       regNo: data.regNo || existing.regNo || regNo,
       lastSeen: Date.now()
-    });
+    };
+    liveSessions.set(key, merged);
+    // Persist to WAL for crash recovery (only active writing sessions with answers)
+    if (merged.status !== 'SUBMITTED' && merged.answers && Object.keys(merged.answers).length > 0) {
+      walAppend(key, merged);
+    }
   },
   removeLiveSession(regNo) {
     const key = (regNo || '').trim().toLowerCase();
     liveSessions.delete(key);
+  },
+
+  // ---- Supervisor login ----------------------------------------------------
+  verifyAdmin(username, password) {
+    const st = this.getSettings();
+    if (!username || !password || username !== (st.adminUser || 'admin')) return false;
+    if (st.adminPassHash) return checkPasswordHash(password, st.adminPassHash);
+    // Legacy plain-text password: accept once, then store it hashed.
+    const legacy = st.adminPass || defaultSettings.adminPass;
+    if (password !== legacy) return false;
+    const next = { ...st, adminPassHash: hashPassword(password) };
+    delete next.adminPass;
+    writeJSON(SETTINGS_FILE, next);
+    return true;
+  },
+  isDefaultAdminPassword() {
+    const st = this.getSettings();
+    if (st.adminPassHash) return checkPasswordHash(defaultSettings.adminPass, st.adminPassHash);
+    return (st.adminPass || defaultSettings.adminPass) === defaultSettings.adminPass;
+  },
+  setAdminPassword(newPassword) {
+    const st = this.getSettings();
+    const next = { ...st, adminPassHash: hashPassword(newPassword) };
+    delete next.adminPass;
+    writeJSON(SETTINGS_FILE, next);
+  },
+  // Kiosk exit PIN: random 6 digits generated once per terminal (replaces fixed 9999).
+  ensureKioskExitPin() {
+    const st = this.getSettings();
+    if (st.kioskExitPin && /^\d{4,8}$/.test(String(st.kioskExitPin))) return st.kioskExitPin;
+    return '9999';
+  },
+  // Give every candidate on the current roster a non-guessable PIN (one-off upgrade).
+  upgradeWeakPins() {
+    const code = this.getSettings().schoolCode;
+    const students = this.getStudents();
+    let changed = 0;
+    students.forEach(s => { if (isWeakPin(s.pin, code)) { s.pin = randomPin(); changed++; } });
+    if (changed) { writeJSON(STUDENTS_FILE, students); this.snapshotCurrentSchool(); }
+    return changed;
   },
 
   // Wipe this terminal clean for a NEW school: clears roster, exams and
@@ -672,7 +905,9 @@ const db = {
     const reset = {
       ...defaultSettings,
       adminUser: cur.adminUser || defaultSettings.adminUser,
-      adminPass: cur.adminPass || defaultSettings.adminPass,
+      adminPass: cur.adminPassHash ? undefined : (cur.adminPass || defaultSettings.adminPass),
+      adminPassHash: cur.adminPassHash,
+      kioskExitPin: cur.kioskExitPin,
       cothiApiEndpoint: cur.cothiApiEndpoint || defaultSettings.cothiApiEndpoint,
       cothiApiKey: cur.cothiApiKey || defaultSettings.cothiApiKey,
       activeExamId: null
@@ -682,5 +917,10 @@ const db = {
     return reset;
   }
 };
+
+db.TERMINAL_ID = TERMINAL_ID;
+db.walAppend = walAppend;
+db.walReplay = walReplay;
+db.walClear = walClear;
 
 module.exports = db;

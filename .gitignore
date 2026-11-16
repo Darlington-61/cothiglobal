@@ -10,3 +10,7 @@ scratch/
 *.zip
 .DS_Store
 Thumbs.db
+
+# Local exam data: rosters, PINs, results, passwords, tokens. Never commit.
+data/
+server_startup.log

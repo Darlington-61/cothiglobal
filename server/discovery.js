@@ -1,8 +1,27 @@
 const dgram = require('dgram');
+const os = require('os');
 const db = require('./db');
 
 const UDP_PORT = 8001;
 const BROADCAST_ADDR = '255.255.255.255';
+
+function getAllBroadcastAddrs() {
+  const addrs = new Set([BROADCAST_ADDR, '127.0.0.1']);
+  try {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          const parts = iface.address.split('.');
+          if (parts.length === 4) {
+            addrs.add(parts.slice(0, 3).join('.') + '.255');
+          }
+        }
+      }
+    }
+  } catch (e) {}
+  return Array.from(addrs);
+}
 
 function startDiscoveryService(httpPort) {
   const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
@@ -41,10 +60,10 @@ function startDiscoveryService(httpPort) {
   });
 
   socket.bind(UDP_PORT, () => {
-    socket.setBroadcast(true);
+    try { socket.setBroadcast(true); } catch (e) {}
     console.log(`[AUTO-DISCOVERY] LAN Auto-Discovery beacon active on UDP port ${UDP_PORT}`);
 
-    // Broadcast announcement every 4 seconds to the entire Wi-Fi LAN
+    // Broadcast announcement every 3 seconds to all subnets & 255.255.255.255
     setInterval(() => {
       try {
         const settings = db.getSettings();
@@ -60,9 +79,12 @@ function startDiscoveryService(httpPort) {
             accentColor: settings.accentColor
           }
         });
-        socket.send(beacon, 0, beacon.length, UDP_PORT, BROADCAST_ADDR, () => {});
+        const targets = getAllBroadcastAddrs();
+        targets.forEach(tgt => {
+          socket.send(beacon, 0, beacon.length, UDP_PORT, tgt, () => {});
+        });
       } catch (e) {}
-    }, 4000);
+    }, 3000);
   });
 }
 

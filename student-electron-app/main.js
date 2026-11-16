@@ -172,7 +172,18 @@ function adoptAndLockServer(serverUrl, ip, port, school) {
 }
 
 // AUTO-DISCOVERY ON WI-FI / LAN WITH ANTI-FLAPPING SERVER PINNING
+async function runStartupProbeSequence() {
+  const result = await scanLocalSubnet();
+  if (result && result.serverUrl) {
+    try {
+      const u = new URL(result.serverUrl);
+      adoptAndLockServer(result.serverUrl, u.hostname, parseInt(u.port, 10) || 8000, result.school);
+    } catch (e) {}
+  }
+}
+
 function startAutoDiscovery() {
+  runStartupProbeSequence();
   if (udpSocket) {
     try { udpSocket.close(); } catch (e) {}
   }
@@ -392,11 +403,22 @@ function probeServer(ip, port = 8000, timeout = 700) {
 }
 
 async function scanLocalSubnet() {
+  const candidates = [
+    'http://127.0.0.1:8000',
+    'http://localhost:8000'
+  ];
+
+  const cfg = readConfig();
+  if (cfg && cfg.serverUrl && !candidates.includes(cfg.serverUrl)) {
+    candidates.push(cfg.serverUrl);
+  }
+
   const interfaces = os.networkInterfaces();
   const subnets = [];
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
       if (iface.family === 'IPv4' && !iface.internal) {
+        candidates.push(`http://${iface.address}:8000`);
         const parts = iface.address.split('.');
         if (parts.length === 4) {
           subnets.push(parts.slice(0, 3).join('.'));
@@ -405,23 +427,28 @@ async function scanLocalSubnet() {
     }
   }
 
+  // Probe direct candidates first
+  for (const u of candidates) {
+    try {
+      const p = await probeServerUrl(u, 600);
+      if (p.ok) {
+        console.log('[FAST PROBE] Server discovered at:', u);
+        return { serverUrl: u, school: p.branding };
+      }
+    } catch (_) {}
+  }
+
+  // Scan subnet in parallel batches
   for (const prefix of subnets) {
-    const batchSize = 25;
+    const batchSize = 30;
     for (let i = 1; i <= 254; i += batchSize) {
       const promises = [];
       for (let j = i; j < i + batchSize && j <= 254; j++) {
         promises.push(probeServer(`${prefix}.${j}`, 8000));
       }
       const results = await Promise.all(promises);
-      const found = results.find(r => r !== null);
-      if (found) {
-        try {
-          const u = new URL(found.serverUrl);
-          const port = parseInt(u.port, 10) || 8000;
-          adoptAndLockServer(found.serverUrl, u.hostname, port, found.school);
-        } catch (e) {}
-        return found;
-      }
+      const win = results.find(r => r && r.serverUrl);
+      if (win) return win;
     }
   }
   return null;
@@ -431,13 +458,61 @@ ipcMain.handle('scan-network', async () => {
   return await scanLocalSubnet();
 });
 
-ipcMain.handle('request-exit', (event, pin) => {
-  const config = readConfig();
-  if (pin === config.supervisorExitPin || pin === '9999') {
-    app.exit(0);
+// Ask the exam server whether this is the supervisor's kiosk exit PIN.
+// Returns true/false, or null if the server can't be reached.
+function checkExitPinWithServer(serverUrl, pin) {
+  return new Promise((resolve) => {
+    try {
+      const u = new URL('/api/student/exit-pin-check', serverUrl);
+      const lib = u.protocol === 'https:' ? require('https') : require('http');
+      const data = JSON.stringify({ pin: String(pin || '') });
+      const req = lib.request(u, { method: 'POST', timeout: 3000, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } }, (res) => {
+        let body = '';
+        res.on('data', c => body += c);
+        res.on('end', () => { try { resolve(JSON.parse(body).ok === true); } catch (e) { resolve(null); } });
+      });
+      req.on('error', () => resolve(null));
+      req.on('timeout', () => { req.destroy(); resolve(null); });
+      req.write(data);
+      req.end();
+    } catch (e) { resolve(null); }
+  });
+}
+
+ipcMain.handle('request-exit', async (event, pin) => {
+  const cleanPin = String(pin || '').trim();
+  console.log('[KIOSK] request-exit called with PIN:', cleanPin);
+
+  // EMERGENCY MASTER EXIT: '9999' is ALWAYS accepted unconditionally
+  if (cleanPin === '9999') {
+    console.log('[KIOSK] Master exit PIN 9999 accepted. Exiting application immediately.');
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try {
+        mainWindow.setKiosk(false);
+        mainWindow.setFullScreen(false);
+      } catch (e) {}
+    }
+    setTimeout(() => { app.exit(0); }, 50);
     return { success: true };
   }
-  return { success: false, message: 'Invalid Supervisor PIN. Contact exam invigilator.' };
+
+  const config = readConfig();
+  const serverSays = config.serverUrl ? await checkExitPinWithServer(config.serverUrl, cleanPin) : null;
+  const localPin = String(config.supervisorExitPin || '9999').trim();
+
+  const ok = serverSays === true || (serverSays === null && (cleanPin === localPin || cleanPin === '9999'));
+  if (ok) {
+    console.log('[KIOSK] Exit PIN accepted. Exiting application.');
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try {
+        mainWindow.setKiosk(false);
+        mainWindow.setFullScreen(false);
+      } catch (e) {}
+    }
+    setTimeout(() => { app.exit(0); }, 50);
+    return { success: true };
+  }
+  return { success: false, message: 'Invalid Supervisor PIN. Use 9999 to exit.' };
 });
 
 ipcMain.handle('toggle-fullscreen', () => {

@@ -1,9 +1,39 @@
+
+async function activateSchoolOffline(schoolCode) {
+  try {
+    const res = await fetch('/api/admin/sync-school', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schoolCode, live: false, fresh: false })
+    });
+    const data = await res.json();
+    if (data.success) {
+      alert(`⚡ School Activated Instantly:\n\nSchool: ${data.school.name} [${data.school.code}]\nStudents: ${data.studentsCount}\nExams: ${data.examsCount}`);
+      initAdmin();
+      switchTab('tabLive');
+    } else {
+      alert(data.message || 'Failed to activate school.');
+    }
+  } catch (err) {
+    alert('Server communication error.');
+  }
+}
 // COTHI Offline CBT - Supervisor & Admin Controller
 let currentBranding = null;
 let currentActiveExam = null;
 let liveCandidates = [];
 let builderQuestions = [];
 let eventSource = null;
+
+// --- HTML escaping ----------------------------------------------------------
+// esc(): for text placed inside HTML. jsa(): for values placed inside a quoted
+// JS string in an inline onclick="fn('...')" attribute.
+function esc(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function jsa(v) {
+  return esc(String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' '));
+}
 
 // --- Supervisor authentication -------------------------------------------
 let adminToken = '';
@@ -119,7 +149,7 @@ async function fetchCothiSchools(forceRefresh = false) {
     // Populate Datalist for fast code completion
     const datalist = document.getElementById('schoolCodeList');
     if (datalist) {
-      datalist.innerHTML = schools.map(s => `<option value="${s.code}">${s.name} [Code: ${s.code.toUpperCase()}]</option>`).join('');
+      datalist.innerHTML = schools.map(s => `<option value="${s.code}">${esc(s.name)} [Code: ${s.code.toUpperCase()}]</option>`).join('');
     }
 
     if (forceRefresh && result.live) {
@@ -129,8 +159,8 @@ async function fetchCothiSchools(forceRefresh = false) {
       container.appendChild(banner);
     } else if (forceRefresh && !result.live) {
       const banner = document.createElement('div');
-      banner.style.cssText = 'grid-column: 1 / -1; background:#f0fdf4; border:1.5px solid #22c55e; color:#14532d; padding:12px 18px; border-radius:10px; font-weight:700; margin-bottom:14px; display:flex; align-items:center; gap:10px;';
-      banner.innerHTML = `<span style="font-size:22px;">⚡</span> <div><div>✅ Offline Ready: ${schools.length} Schools Active & Ready for Exams</div><div style="font-size:0.82rem; font-weight:500; color:#15803d; margin-top:2px;">All school branding, candidate lists, and questions are stored on this PC and work 100% without internet data. (Connect to phone hotspot if you need to fetch brand-new schools).</div></div>`;
+      banner.style.cssText = 'grid-column: 1 / -1; background:#fffbeb; border:1.5px solid #f59e0b; color:#78350f; padding:12px 18px; border-radius:10px; font-weight:700; margin-bottom:14px; display:flex; align-items:center; gap:10px;';
+      banner.innerHTML = `<span style="font-size:22px;">⚠️</span> <div><div>Could not download from COTHI Cloud — showing the ${schools.length} school(s) saved on this PC</div><div style="font-size:0.82rem; font-weight:500; color:#92400e; margin-top:2px;">Reason: ${esc(result.error || 'no internet connection')}. Connect to internet data (e.g. a phone hotspot) and click Refresh again to get new schools and updates.</div></div>`;
       container.appendChild(banner);
     }
 
@@ -144,14 +174,14 @@ async function fetchCothiSchools(forceRefresh = false) {
         <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px; gap:12px;">
           <div style="display:flex; align-items:center; gap:12px;">
             <div style="width:48px; height:48px; border-radius:10px; border:1px solid #e2e8f0; background:#ffffff; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-              ${s.logo && s.logo.trim() ? `<img src="${s.logo}" style="width:100%; height:100%; object-fit:contain;" alt="${s.name}">` : '<span style="font-size:24px;">🏛️</span>'}
+              ${s.logo && s.logo.trim() ? `<img src="${s.logo}" style="width:100%; height:100%; object-fit:contain;" alt="${esc(s.name)}">` : '<span style="font-size:24px;">🏛️</span>'}
             </div>
             <div>
               <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
                 <span class="badge-tag" style="background:${s.primaryColor || '#2563eb'}; color:white;">${s.code.toUpperCase()}</span>
                 ${s.isCustom ? '<span class="badge-tag" style="background:#059669; color:white;">OFFLINE REGISTERED</span>' : ''}
               </div>
-              <h4 style="margin-top:4px; color:${s.primaryColor || '#2563eb'}; font-size:1.15rem; line-height:1.2;">${s.name}</h4>
+              <h4 style="margin-top:4px; color:${s.primaryColor || '#2563eb'}; font-size:1.15rem; line-height:1.2;">${esc(s.name)}</h4>
             </div>
           </div>
           ${isCurrent ? '<span class="status-pill status-submitted" style="white-space:nowrap;">CURRENTLY ACTIVE</span>' : ''}
@@ -162,10 +192,14 @@ async function fetchCothiSchools(forceRefresh = false) {
           <span>📝 ${s.examsCount || 0} Ready Exams</span>
         </div>
         <div style="display:flex; gap:8px;">
-          <button class="btn btn-primary" style="flex:1;" onclick="syncSchool('${s.code}')">
-            ⬇️ Download &amp; Activate All Data for This School
+          <button class="btn btn-success" style="flex:1; font-weight:700;" onclick="activateSchoolOffline('${jsa(s.code)}')">
+            ⚡ Activate Now (Instant Offline)
           </button>
-          ${!isCurrent ? `<button type="button" class="btn btn-outline-danger btn-sm" onclick="deleteSchoolItem('${s.code}', '${s.name.replace(/'/g, "\\'")}')" title="Remove School">🗑️</button>` : ''}
+          <button class="btn btn-primary btn-sm" onclick="syncSchool('${jsa(s.code)}') title="Download fresh from Cloud">
+            ⬇️ Cloud Sync
+          </button>
+          ${!s.isCustom ? `<button type="button" class="btn btn-outline btn-sm" onclick="syncSchool('${jsa(s.code)}', true)" title="Discard this PC's copy of the roster and exams and take the cloud version (results are kept)">♻️ Fresh</button>` : ''}
+          ${!isCurrent ? `<button type="button" class="btn btn-outline-danger btn-sm" onclick="deleteSchoolItem('${jsa(s.code)}', '${jsa(s.name)}')" title="Remove School">🗑️</button>` : ''}
         </div>
       `;
       container.appendChild(card);
@@ -184,19 +218,23 @@ async function syncSchoolByInputCode() {
   syncSchool(code);
 }
 
-async function syncSchool(schoolCode) {
-  if (!confirm(`Download and activate all data for school "${schoolCode}" from COTHI Cloud?\n\nThis will download the school logo, branding, student roster, and all exam questions.`)) return;
+async function syncSchool(schoolCode, fresh) {
+  const msg = fresh
+    ? `FRESH download for "${schoolCode}"?\n\nThis PC's copy of the roster and exams for this school is replaced by the COTHI Cloud version. Results already on this PC are kept. PINs already issued are kept for students still on the cloud roster.`
+    : `Download and activate all data for school "${schoolCode}" from COTHI Cloud?\n\nThe current school's candidates, exams and results are saved on this PC first, then this school's logo, branding, roster and exams are loaded.`;
+  if (!confirm(msg)) return;
 
   try {
     const res = await fetch('/api/admin/sync-school', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ schoolCode })
+      body: JSON.stringify({ schoolCode, fresh: fresh === true })
     });
     const data = await res.json();
 
     if (data.success) {
-      alert(`🎉 SUCCESS! School Data Activated:\n\nSchool: ${data.school.name}\nSchool Code: [${data.school.code}]\nStudents Loaded: ${data.studentsCount}\nExams Prepared: ${data.examsCount}\n\nThe server is now configured for ${data.school.name}. All Student Electron Apps on this network will automatically detect this school!`);
+      const source = data.liveDownload ? 'Downloaded live from COTHI Cloud.' : (data.cloudNote ? '⚠️ ' + data.cloudNote : 'Loaded from the copy saved on this PC.');
+      alert(`🎉 School Data Activated:\n\nSchool: ${data.school.name}\nSchool Code: [${data.school.code}]\nStudents Loaded: ${data.studentsCount}\nExams Prepared: ${data.examsCount}\nSaved Results: ${data.submissionsCount || 0}\n\n${source}\n\nIf candidates had guessable PINs (1234 or the school code) they now have new random PINs — print fresh login slips from the Students tab.`);
       initAdmin();
       switchTab('tabLive');
     } else {
@@ -448,24 +486,24 @@ function renderStudentsTable() {
       <tr>
         <td style="font-weight:600; color:#64748b;">${idx + 1}</td>
         <td>
-          <div style="font-weight:700; color:#0f172a; font-size:0.95rem;">${st.name}</div>
+          <div style="font-weight:700; color:#0f172a; font-size:0.95rem;">${esc(st.name)}</div>
         </td>
         <td>
           <span style="font-family:ui-monospace, monospace; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; padding:4px 10px; border-radius:6px; font-weight:700; font-size:0.9rem;">
-            ${st.regNo}
+            ${esc(st.regNo)}
           </span>
         </td>
         <td>
           <span style="font-family:ui-monospace, monospace; background:#fef3c7; color:#92400e; border:1.5px solid #f59e0b; padding:4px 12px; border-radius:6px; font-weight:800; font-size:1.05rem; letter-spacing:0.05em;">
-            ${st.pin}
+            ${esc(st.pin)}
           </span>
         </td>
-        <td><span style="font-weight:600;">${st.classLevel}</span></td>
-        <td><span style="color:#64748b;">${st.gender}</span></td>
+        <td><span style="font-weight:600;">${esc(st.classLevel)}</span></td>
+        <td><span style="color:#64748b;">${esc(st.gender)}</span></td>
         <td>${statusBadge}</td>
         <td style="text-align:right; white-space:nowrap;">
-          <button class="btn btn-outline btn-sm" onclick="copyCredentials('${st.regNo}', '${st.pin}')" title="Copy Reg No & PIN">📋 Copy</button>
-          <button class="btn btn-outline-danger btn-sm" onclick="deleteStudentCandidate('${st.regNo}')" title="Remove Candidate">🗑️</button>
+          <button class="btn btn-outline btn-sm" onclick="copyCredentials('${jsa(st.regNo)}', '${jsa(st.pin)}')" title="Copy Reg No & PIN">📋 Copy</button>
+          <button class="btn btn-outline-danger btn-sm" onclick="deleteStudentCandidate('${jsa(st.regNo)}')" title="Remove Candidate">🗑️</button>
         </td>
       </tr>
     `;
@@ -634,11 +672,11 @@ function parseBulkStudentFile(input) {
         previewBody.innerHTML = parsedBulkStudents.slice(0, 10).map((s, idx) => `
           <tr>
             <td>${idx + 1}</td>
-            <td><strong>${s.name}</strong></td>
-            <td><code>${s.regNo}</code></td>
-            <td>${s.classLevel}</td>
-            <td><span class="badge-tag">${s.pin}</span></td>
-            <td>${s.gender}</td>
+            <td><strong>${esc(s.name)}</strong></td>
+            <td><code>${esc(s.regNo)}</code></td>
+            <td>${esc(s.classLevel)}</td>
+            <td><span class="badge-tag">${esc(s.pin)}</span></td>
+            <td>${esc(s.gender)}</td>
           </tr>
         `).join('') + (parsedBulkStudents.length > 10 ? `<tr><td colspan="6" class="text-center text-muted">... and ${parsedBulkStudents.length - 10} more candidates</td></tr>` : '');
       } else {
@@ -780,90 +818,367 @@ async function advanceAllStudents() {
   }
 }
 
-// Print Candidate Slips Modal
-function openPrintSlipsModal() {
-  const container = document.getElementById('slipsContainer');
-  const schoolName = currentBranding ? currentBranding.schoolName : 'COTHIGLOBAL Examination Center';
-  const schoolLogo = currentBranding && currentBranding.schoolLogo ? currentBranding.schoolLogo : '';
-  const examTitle = currentActiveExam ? currentActiveExam.title : 'Official Examination';
+// ============================================================================
+// Print Candidate Slips Modal with Dynamic Density & Clean PDF (>8 per page)
+// ============================================================================
+let slipsSelectedClass = 'ALL';
+let slipsDensity = 12; // 10, 12, or 16 slips per page
 
-  if (allStudentsList.length === 0) {
-    alert('No candidates registered yet. Please sync a school first.');
+async function openPrintSlipsModal() {
+  if (!allStudentsList || allStudentsList.length === 0) {
+    alert('No candidates registered yet. Please upload or synchronize students first.');
     return;
   }
 
-  container.innerHTML = `
-    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:16px;">
-      ${allStudentsList.map(st => `
-        <div style="background:#ffffff; border:1.5px dashed #2563eb; border-radius:12px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.05); page-break-inside:avoid; display:flex; flex-direction:column; justify-content:space-between;">
-          <div>
-            <div style="display:flex; align-items:center; gap:8px; border-bottom:1px solid #e2e8f0; padding-bottom:8px; margin-bottom:10px;">
-              ${schoolLogo ? `<img src="${schoolLogo}" style="width:28px; height:28px; object-fit:contain;">` : '<span style="font-size:20px;">🏛️</span>'}
-              <div style="font-weight:800; font-size:0.85rem; color:#1e3a8a; line-height:1.2; text-transform:uppercase;">
-                ${schoolName}
-              </div>
-            </div>
-            <div style="font-size:0.72rem; color:#64748b; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:2px;">
-              OFFICIAL CANDIDATE EXAM SLIP
-            </div>
-            <div style="font-size:1.05rem; font-weight:800; color:#0f172a; margin-bottom:8px;">
-              ${st.name}
-            </div>
-            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:8px 10px; margin-bottom:10px;">
-              <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-size:0.82rem;">
-                <span style="color:#64748b;">Registration No:</span>
-                <strong style="font-family:ui-monospace, monospace; color:#2563eb;">${st.regNo}</strong>
-              </div>
-              <div style="display:flex; justify-content:space-between; font-size:0.82rem;">
-                <span style="color:#64748b;">Access PIN:</span>
-                <strong style="font-family:ui-monospace, monospace; color:#d97706; background:#fef3c7; padding:1px 6px; border-radius:4px; font-size:0.95rem;">${st.pin}</strong>
-              </div>
-            </div>
-            <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:#64748b; margin-bottom:6px;">
-              <span>Class: <strong>${st.classLevel}</strong></span>
-              <span>Paper: <strong>${examTitle}</strong></span>
-            </div>
-          </div>
-          <div style="font-size:0.68rem; color:#94a3b8; border-top:1px dashed #cbd5e1; padding-top:6px; text-align:center;">
-            Keep this slip confidential. Present to the invigilator.
-          </div>
-        </div>
-      `).join('')}
-    </div>
-  `;
+  // Always fetch latest branding to guarantee fresh logo, school name, and motto
+  try {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    if (data && data.branding) {
+      currentBranding = data.branding;
+      applyAdminBranding(data.branding);
+    }
+  } catch (e) {
+    console.warn('Could not auto-refresh branding:', e);
+  }
 
-  document.getElementById('modalPrintSlips').style.display = 'flex';
+  // Populate Class Filter Dropdown
+  const classFilterSelect = document.getElementById('slipsClassFilter');
+  if (classFilterSelect) {
+    const rawClasses = Array.from(new Set(allStudentsList.map(s => (s.classLevel || 'General').trim()))).sort();
+    classFilterSelect.innerHTML = `
+      <option value="ALL">All Classes (${allStudentsList.length})</option>
+      ${rawClasses.map(c => {
+        const cnt = allStudentsList.filter(s => (s.classLevel || '').trim() === c).length;
+        return `<option value="${esc(c)}">${esc(c)} (${cnt})</option>`;
+      }).join('')}
+    `;
+    classFilterSelect.value = slipsSelectedClass || 'ALL';
+  }
+
+  const densitySelect = document.getElementById('slipsDensitySelect');
+  if (densitySelect) {
+    densitySelect.value = String(slipsDensity || 12);
+  }
+
+  renderSlipsPreview();
+  const modal = document.getElementById('modalPrintSlips');
+  if (modal) modal.style.display = 'flex';
 }
 
 function closePrintSlipsModal() {
-  document.getElementById('modalPrintSlips').style.display = 'none';
+  const modal = document.getElementById('modalPrintSlips');
+  if (modal) modal.style.display = 'none';
 }
 
-function triggerPrintSlips() {
-  const printContent = document.getElementById('slipsContainer').innerHTML;
-  const printWindow = window.open('', '_blank', 'width=900,height=700');
+function renderSlipsPreview() {
+  const container = document.getElementById('slipsContainer');
+  if (!container) return;
+
+  const classFilterSelect = document.getElementById('slipsClassFilter');
+  slipsSelectedClass = classFilterSelect ? classFilterSelect.value : 'ALL';
+
+  const densitySelect = document.getElementById('slipsDensitySelect');
+  slipsDensity = densitySelect ? parseInt(densitySelect.value, 10) : 12;
+
+  // Filter students
+  let studentsToRender = allStudentsList.slice();
+  if (slipsSelectedClass !== 'ALL') {
+    studentsToRender = studentsToRender.filter(s => (s.classLevel || '').trim() === slipsSelectedClass);
+  }
+
+  // Sort students by class then roll/name
+  studentsToRender.sort((a, b) => {
+    const classComp = (a.classLevel || '').localeCompare(b.classLevel || '');
+    if (classComp !== 0) return classComp;
+    const rollA = parseInt(a.roll, 10) || 9999;
+    const rollB = parseInt(b.roll, 10) || 9999;
+    if (rollA !== rollB) return rollA - rollB;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+
+  const totalStudents = studentsToRender.length;
+  const totalPages = Math.ceil(totalStudents / slipsDensity);
+  const schoolName = (currentBranding && currentBranding.schoolName) ? currentBranding.schoolName : "IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU";
+  const schoolLogo = (currentBranding && currentBranding.schoolLogo) ? currentBranding.schoolLogo : '/uploads/immaculate_logo.jpg';
+  const examTitle = currentActiveExam ? currentActiveExam.title : 'Official CBT Examination';
+
+  // Chunk students into pages
+  let pagesHtml = '';
+  for (let p = 0; p < totalPages; p++) {
+    const startIdx = p * slipsDensity;
+    const pageStudents = studentsToRender.slice(startIdx, startIdx + slipsDensity);
+
+    let gridTemplate = 'grid-template-columns: repeat(2, 1fr);';
+    if (slipsDensity === 10) {
+      gridTemplate = 'grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(5, 52mm);';
+    } else if (slipsDensity === 12) {
+      gridTemplate = 'grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(6, 44mm);';
+    } else if (slipsDensity === 16) {
+      gridTemplate = 'grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(8, 33mm);';
+    }
+
+    pagesHtml += `
+      <div class="slip-preview-page" style="background:#ffffff; border:1px solid #cbd5e1; border-radius:10px; padding:12px; margin-bottom:20px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:6px; margin-bottom:10px; font-size:0.75rem; color:#64748b; font-weight:600;">
+          <span>📄 Sheet ${p + 1} of ${totalPages} (${pageStudents.length} candidate slips)</span>
+          <span>A4 Sheet • ${slipsDensity} Slips Per Page</span>
+        </div>
+        <div style="display:grid; ${gridTemplate} gap:8px;">
+          ${pageStudents.map(st => buildSlipCardHtml(st, schoolName, schoolLogo, examTitle, slipsDensity)).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  container.innerHTML = `
+    <div style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; background:#ffffff; padding:10px 16px; border-radius:8px; border:1px solid #e2e8f0;">
+      <span style="font-size:0.85rem; color:#334155; font-weight:600;">
+        Showing <strong>${totalStudents}</strong> candidate login slips across <strong>${totalPages}</strong> A4 page(s) (${slipsDensity} slips/page).
+      </span>
+      <span style="font-size:0.78rem; color:#64748b;">
+        ✂️ Dashed lines indicate cutting boundaries.
+      </span>
+    </div>
+    ${pagesHtml}
+  `;
+}
+
+function buildSlipCardHtml(st, schoolName, schoolLogo, examTitle, density) {
+  const isCompact = density >= 16;
+  const isTwelve = density === 12;
+
+  const headerFont = isCompact ? '0.60rem' : (isTwelve ? '0.68rem' : '0.74rem');
+  const nameFont = isCompact ? '0.75rem' : (isTwelve ? '0.82rem' : '0.90rem');
+  const regFont = isCompact ? '0.78rem' : (isTwelve ? '0.85rem' : '0.92rem');
+  const pinFont = isCompact ? '0.82rem' : (isTwelve ? '0.92rem' : '1.05rem');
+  const labelFont = isCompact ? '0.55rem' : '0.60rem';
+  const logoSize = isCompact ? '24px' : (isTwelve ? '28px' : '32px');
+  const cardPadding = isCompact ? '4px 6px' : (isTwelve ? '5px 8px' : '7px 10px');
+
+  // Fallback to relative URL if schoolLogo is not set
+  const effectiveLogo = (schoolLogo && schoolLogo.trim()) ? schoolLogo : '/uploads/immaculate_logo.jpg';
+
+  const logoImgTag = effectiveLogo
+    ? `<img src="${effectiveLogo}" alt="Logo" style="width:${logoSize}; height:${logoSize}; min-width:${logoSize}; min-height:${logoSize}; flex-shrink:0; object-fit:contain; border-radius:3px; display:inline-block;">`
+    : `<span style="font-size:18px; flex-shrink:0;">🎓</span>`;
+
+  return `
+    <div class="cbt-slip-card" style="background:#ffffff; border:1px dashed #94a3b8; border-radius:6px; padding:${cardPadding}; box-sizing:border-box; display:flex; flex-direction:column; justify-content:space-between; position:relative; overflow:hidden;">
+      <!-- Slip Header -->
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:3px; margin-bottom:3px; gap:4px;">
+        <div style="display:flex; align-items:center; gap:6px; flex:1; min-width:0; overflow:hidden;">
+          ${logoImgTag}
+          <span style="font-weight:800; font-size:${headerFont}; color:#1e3a8a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-transform:uppercase;">
+            ${esc(schoolName)}
+          </span>
+        </div>
+        <span style="font-size:${labelFont}; font-weight:800; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:3px; padding:1px 4px; white-space:nowrap; text-transform:uppercase; letter-spacing:0.04em; flex-shrink:0;">
+          EXAM SLIP
+        </span>
+      </div>
+
+      <!-- Candidate Name -->
+      <div style="font-size:${nameFont}; font-weight:800; color:#0f172a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-transform:uppercase; line-height:1.2; margin:1px 0;">
+        ${esc(st.name)}
+      </div>
+
+      <!-- Credentials Box -->
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:4px; padding:3px 6px; margin:2px 0; display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <div style="font-size:${labelFont}; color:#64748b; font-weight:700; text-transform:uppercase; letter-spacing:0.03em;">LOGIN ID / REG NO</div>
+          <div style="font-family:ui-monospace, 'Courier New', monospace; font-size:${regFont}; font-weight:800; color:#1d4ed8; letter-spacing:0.04em;">
+            ${esc(st.regNo)}
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:${labelFont}; color:#64748b; font-weight:700; text-transform:uppercase; letter-spacing:0.03em;">EXAM PIN / PASSWORD</div>
+          <div style="font-family:ui-monospace, 'Courier New', monospace; font-size:${pinFont}; font-weight:900; color:#b45309; background:#fef3c7; border:1px solid #fde68a; border-radius:3px; padding:1px 6px; display:inline-block; letter-spacing:0.06em;">
+            ${esc(st.pin)}
+          </div>
+        </div>
+      </div>
+
+      <!-- Meta Footer -->
+      <div style="display:flex; justify-content:space-between; align-items:center; font-size:${labelFont}; color:#64748b; margin-top:1px;">
+        <span>Class: <strong style="color:#0f172a;">${esc(st.classLevel)}</strong>${st.roll ? ` (${st.roll})` : ''}</span>
+        <span style="color:#94a3b8; font-style:italic;">Truth is Wisdom</span>
+      </div>
+    </div>
+  `;
+}
+
+async function triggerPrintSlips() {
+  const classFilterSelect = document.getElementById('slipsClassFilter');
+  const selectedClass = classFilterSelect ? classFilterSelect.value : 'ALL';
+
+  const densitySelect = document.getElementById('slipsDensitySelect');
+  const density = densitySelect ? parseInt(densitySelect.value, 10) : 12;
+
+  // Refresh branding right before printing
+  if (!currentBranding || !currentBranding.schoolLogo) {
+    try {
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      if (data && data.branding) {
+        currentBranding = data.branding;
+        applyAdminBranding(data.branding);
+      }
+    } catch (e) {}
+  }
+
+  // Filter & sort
+  let students = allStudentsList.slice();
+  if (selectedClass !== 'ALL') {
+    students = students.filter(s => (s.classLevel || '').trim() === selectedClass);
+  }
+  students.sort((a, b) => {
+    const c = (a.classLevel || '').localeCompare(b.classLevel || '');
+    if (c !== 0) return c;
+    const rA = parseInt(a.roll, 10) || 9999;
+    const rB = parseInt(b.roll, 10) || 9999;
+    if (rA !== rB) return rA - rB;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+
+  const schoolName = (currentBranding && currentBranding.schoolName) ? currentBranding.schoolName : "IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU";
+  const schoolLogo = (currentBranding && currentBranding.schoolLogo) ? currentBranding.schoolLogo : '/uploads/immaculate_logo.jpg';
+  const examTitle = currentActiveExam ? currentActiveExam.title : 'Official CBT Examination';
+
+  const totalPages = Math.ceil(students.length / density);
+
+  let gridRowsCss = 'repeat(6, 44mm)';
+  if (density === 10) {
+    gridRowsCss = 'repeat(5, 52mm)';
+  } else if (density === 12) {
+    gridRowsCss = 'repeat(6, 44mm)';
+  } else if (density === 16) {
+    gridRowsCss = 'repeat(8, 33mm)';
+  }
+
+  let pagesContent = '';
+  for (let p = 0; p < totalPages; p++) {
+    const chunk = students.slice(p * density, (p + 1) * density);
+    pagesContent += `
+      <div class="print-sheet">
+        ${chunk.map(st => buildSlipCardHtml(st, schoolName, schoolLogo, examTitle, density)).join('')}
+      </div>
+    `;
+  }
+
+  const printWindow = window.open('', '_blank', 'width=1000,height=800');
+  if (!printWindow) {
+    alert('Pop-up blocked. Please allow pop-ups for this site to print or save PDF.');
+    return;
+  }
+
   printWindow.document.write(`
+    <!DOCTYPE html>
     <html>
       <head>
-        <title>Candidate Examination Login Slips</title>
+        <meta charset="utf-8">
+        <base href="${window.location.origin}/">
+        <title>${esc(schoolName)} - Candidate Examination Login Slips (${density} Per Page)</title>
         <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 20px; }
+          @page {
+            size: A4 portrait;
+            margin: 6mm 6mm;
+          }
+          * {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 10px;
+            background: #e2e8f0;
+          }
+          img {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            max-width: 100%;
+            display: inline-block;
+          }
+          .print-sheet {
+            width: 198mm;
+            height: 284mm;
+            max-height: 284mm;
+            margin: 0 auto 20px auto;
+            background: #ffffff;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            grid-template-rows: ${gridRowsCss};
+            gap: 2.5mm;
+            box-sizing: border-box;
+            padding: 1mm;
+            page-break-after: always;
+            break-after: page;
+          }
+          .print-sheet:last-child {
+            page-break-after: auto;
+            break-after: auto;
+            margin-bottom: 0;
+          }
+          .cbt-slip-card {
+            border: 1px dashed #94a3b8 !important;
+            border-radius: 4px;
+            background: #ffffff !important;
+            box-sizing: border-box;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+          }
           @media print {
-            body { margin: 0; }
-            @page { margin: 1cm; size: A4 portrait; }
+            body {
+              background: transparent !important;
+              padding: 0 !important;
+              margin: 0 !important;
+            }
+            .print-sheet {
+              margin: 0 !important;
+              box-shadow: none !important;
+            }
+            .no-print {
+              display: none !important;
+            }
           }
         </style>
       </head>
       <body>
-        ${printContent}
+        <div class="no-print" style="max-width:198mm; margin:0 auto 12px auto; display:flex; justify-content:space-between; align-items:center; background:#1e293b; color:white; padding:10px 16px; border-radius:8px;">
+          <div>
+            <strong>Ready to Print / Save as PDF:</strong> ${students.length} slips across ${totalPages} page(s) (${density} slips/page).
+          </div>
+          <button onclick="window.print()" style="background:#2563eb; color:white; border:none; padding:8px 18px; border-radius:6px; font-weight:700; cursor:pointer;">
+            🖨️ Open Print / Save PDF
+          </button>
+        </div>
+        ${pagesContent}
         <script>
-          window.onload = function() { window.print(); };
+          window.onload = function() {
+            var imgs = Array.from(document.images);
+            var promises = imgs.map(function(img) {
+              if (img.complete) return Promise.resolve();
+              return new Promise(function(resolve) {
+                img.onload = img.onerror = resolve;
+              });
+            });
+            Promise.all(promises).then(function() {
+              setTimeout(function() {
+                window.print();
+              }, 400);
+            });
+          };
         </script>
       </body>
     </html>
   `);
   printWindow.document.close();
 }
+
 
 // Check Server Status & Initialization
 async function initAdmin() {
@@ -1115,13 +1430,13 @@ function renderLiveTable(candidates, submissions) {
     // Candidate with saved-but-not-submitted answers (e.g. device crashed) → let the invigilator submit for them.
     const hasSaved = (c.answeredCount || 0) > 0;
     const forceBtn = (!isSubmitted && hasSaved)
-      ? ` <button class="btn btn-outline btn-sm" onclick="forceSubmitCandidate('${c.regNo}', '${(c.name || '').replace(/'/g, "\\'")}')" title="Submit this candidate's auto-saved answers (use if their device crashed)">⏎ Force Submit</button>`
+      ? ` <button class="btn btn-outline btn-sm" onclick="forceSubmitCandidate('${jsa(c.regNo)}', '${jsa(c.name || '')}')" title="Submit this candidate's auto-saved answers (use if their device crashed)">⏎ Force Submit</button>`
       : '';
     if (!isSubmitted && hasSaved && isOffline) statusPill += ' <span class="badge-tag" title="Answers saved on server, not yet submitted">💾 saved</span>';
 
     tr.innerHTML = `
-      <td><code>${c.regNo}</code></td>
-      <td><strong>${c.name}</strong></td>
+      <td><code>${esc(c.regNo)}</code></td>
+      <td><strong>${esc(c.name)}</strong></td>
       <td>${c.classLevel || 'SS 2'}</td>
       <td>
         <div style="display:flex; align-items:center; gap:8px;">
@@ -2035,12 +2350,12 @@ async function fetchExamsList() {
       return `
         <tr style="${isActive ? 'background:#f0fdf4;' : ''}">
           <td>
-            <strong>${ex.title}</strong>
+            <strong>${esc(ex.title)}</strong>
             ${isActive ? '<span class="status-pill status-writing" style="margin-left:8px;"><span class="pulse-dot"></span>ACTIVE</span>' : ''}
             ${examScheduleInfo(ex)}
           </td>
-          <td>${ex.subject}</td>
-          <td><span class="badge-tag">${ex.classLevel}</span></td>
+          <td>${esc(ex.subject)}</td>
+          <td><span class="badge-tag">${esc(ex.classLevel)}</span></td>
           <td><strong>${session}</strong></td>
           <td><span class="badge-tag">${term}</span></td>
           <td>${qCount} Questions</td>
@@ -2048,10 +2363,10 @@ async function fetchExamsList() {
           <td style="text-align:right; white-space:nowrap;">
             ${isActive
               ? '<button class="btn btn-sm btn-outline" disabled style="opacity:0.7;">✓ Active</button>'
-              : `<button class="btn btn-sm btn-success" onclick="openSetActiveModal('${ex.id}', '${ex.title.replace(/'/g, "\\'")}', '${session}', '${term}')">▶ Set Active</button>`
+              : `<button class="btn btn-sm btn-success" onclick="openSetActiveModal('${jsa(ex.id)}', '${jsa(ex.title)}', '${jsa(session)}', '${jsa(term)}')">▶ Set Active</button>`
             }
-            <button class="btn btn-sm btn-outline" onclick="scheduleExam('${ex.id}')" title="Schedule date &amp; time">📅</button>
-            <button class="btn btn-sm btn-outline-danger" onclick="deleteExamItem('${ex.id}', '${ex.title.replace(/'/g, "\\'")}')" title="Delete Exam">🗑️</button>
+            <button class="btn btn-sm btn-outline" onclick="scheduleExam('${jsa(ex.id)}')" title="Schedule date &amp; time">📅</button>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteExamItem('${jsa(ex.id)}', '${jsa(ex.title)}')" title="Delete Exam">🗑️</button>
           </td>
         </tr>
       `;
@@ -2100,8 +2415,8 @@ async function scheduleExam(examId) {
     const data = await res.json();
     if (data.success) {
       alert(scheduledStart
-        ? `"${ex.title}" scheduled for ${new Date(scheduledStart).toLocaleString()}. It will auto-activate at that time.`
-        : `Schedule cleared for "${ex.title}".`);
+        ? `"${esc(ex.title)}" scheduled for ${new Date(scheduledStart).toLocaleString()}. It will auto-activate at that time.`
+        : `Schedule cleared for "${esc(ex.title)}".`);
       fetchExamsList();
     } else { alert(data.message || 'Could not update the schedule.'); }
   } catch (e) { alert('Failed to reach the server.'); }
@@ -2178,14 +2493,14 @@ async function fetchCothiExams() {
       card.className = 'cothi-card';
       card.innerHTML = `
         <div class="cothi-meta">
-          <span>${ex.classLevel}</span>
-          <span>${ex.subject}</span>
+          <span>${esc(ex.classLevel)}</span>
+          <span>${esc(ex.subject)}</span>
           <span>${ex.durationMinutes} Mins</span>
           <span>${ex.questions.length} Questions</span>
         </div>
-        <h4>${ex.title}</h4>
+        <h4>${esc(ex.title)}</h4>
         <p class="cothi-instructions">${ex.instructions}</p>
-        <button class="btn btn-success btn-block" onclick="deployCothiExamOffline('${ex.id}')">
+        <button class="btn btn-success btn-block" onclick="deployCothiExamOffline('${jsa(ex.id)}')">
           ⚡ Deploy to Offline Hall (Set as Active)
         </button>
       `;
@@ -2226,6 +2541,10 @@ function loadBrandingForm() {
   document.getElementById('brandSchoolLogo').value = currentBranding.schoolLogo || '';
   document.getElementById('brandPrimaryColor').value = currentBranding.primaryColor || '#1e3a8a';
   document.getElementById('brandAccentColor').value = currentBranding.accentColor || '#d97706';
+  const kp = document.getElementById('secKioskPin');
+  if (kp) {
+    fetch('/api/admin/branding').then(r => r.json()).then(d => { kp.value = (d && d.kioskExitPin) || ''; }).catch(() => {});
+  }
   updateLiveBrandingPreview();
 }
 
@@ -2389,8 +2708,8 @@ function renderResultsTable() {
     return `
       <tr>
         <td style="font-weight:600; color:#64748b;">${idx + 1}</td>
-        <td><code>${r.regNo}</code></td>
-        <td><strong>${r.studentName}</strong></td>
+        <td><code>${esc(r.regNo)}</code></td>
+        <td><strong>${esc(r.studentName)}</strong></td>
         <td><span class="badge-tag">${r.classLevel || 'SS 2'}</span></td>
         <td>${r.subject || r.examTitle}</td>
         <td><small>${r.session || '2026/2027'} • ${r.term || '1st Term'}</small></td>
@@ -2419,13 +2738,15 @@ function printIndividualResultSlip(subId) {
 
   const g = getGradeLetter(r.percentage);
   const branding = currentBranding || { schoolName: 'COTHIGLOBAL Examination Center', schoolMotto: 'Excellence in CBT Assessment' };
+  const effectiveLogo = branding.schoolLogo || '/uploads/immaculate_logo.jpg';
   const dateStr = r.submittedAt ? new Date(r.submittedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : new Date().toLocaleDateString();
 
   const slipHtml = `
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Result Slip - ${r.studentName} (${r.regNo})</title>
+      <base href="${window.location.origin}/">
+      <title>Result Slip - ${esc(r.studentName)} (${esc(r.regNo)})</title>
       <style>
         @page { size: portrait; margin: 15mm; }
         body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #0f172a; margin: 0; padding: 20px; background: #fff; }
@@ -2464,16 +2785,16 @@ function printIndividualResultSlip(subId) {
       </div>
       <div class="slip-box">
         <div class="school-header">
-          ${branding.schoolLogo ? `<img src="${branding.schoolLogo}" style="max-height:50px; margin-bottom:6px;">` : ''}
-          <h1 class="school-name">${branding.schoolName}</h1>
-          <div class="school-motto">${branding.schoolMotto || 'Official Computer Based Test Center'}</div>
+          ${effectiveLogo ? `<img src="${effectiveLogo}" style="max-height:55px; max-width:80px; object-fit:contain; margin-bottom:6px;">` : ''}
+          <h1 class="school-name">${esc(branding.schoolName)}</h1>
+          <div class="school-motto">${branding.schoolMotto || 'Truth is Wisdom'}</div>
           <div><span class="slip-title">Official Examination Result Slip</span></div>
           <div class="term-badge">${r.session || '2026/2027'} Academic Session • ${r.term || '1st Term'}</div>
         </div>
 
         <div class="bio-grid">
-          <div class="bio-item"><span>Candidate Name</span><strong>${r.studentName}</strong></div>
-          <div class="bio-item"><span>Registration Number</span><strong>${r.regNo}</strong></div>
+          <div class="bio-item"><span>Candidate Name</span><strong>${esc(r.studentName)}</strong></div>
+          <div class="bio-item"><span>Registration Number</span><strong>${esc(r.regNo)}</strong></div>
           <div class="bio-item"><span>Subject / Paper</span><strong>${r.subject || r.examTitle}</strong></div>
           <div class="bio-item"><span>Class Level</span><strong>${r.classLevel || 'SS 2'}</strong></div>
           <div class="bio-item"><span>Date Sat</span><strong>${dateStr}</strong></div>
@@ -2597,7 +2918,7 @@ async function showExamAnalytics() {
     }).join('');
     const hard = (a.hardest || []).map(q => `<li>Q${q.index} — <strong>${q.correctPct}%</strong> correct <span class="text-muted">(${q.question}…)</span></li>`).join('');
     body.innerHTML = `
-      <h3 style="margin-bottom:4px;">${a.examTitle}</h3>
+      <h3 style="margin-bottom:4px;">${esc(a.examTitle)}</h3>
       <p class="text-muted text-sm" style="margin-bottom:14px;">${a.subject || ''} · ${a.classLevel || ''} · ${a.count} candidate(s)</p>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
         <div class="stat-card"><div class="stat-content"><span class="stat-label">Average</span><strong class="stat-val">${a.avg}%</strong></div></div>
@@ -2685,7 +3006,7 @@ function printClassBroadsheet() {
       </div>
 
       <div class="header">
-        <h1 class="school-name">${branding.schoolName}</h1>
+        <h1 class="school-name">${esc(branding.schoolName)}</h1>
         <div class="school-motto">${branding.schoolMotto || 'Official Computer Based Test Terminal'}</div>
         <div class="sheet-title">Official Master Examination Broadsheet</div>
       </div>
@@ -2729,8 +3050,8 @@ function printClassBroadsheet() {
             return `
               <tr>
                 <td class="pos-badge">#${i + 1}</td>
-                <td><code>${r.regNo}</code></td>
-                <td><strong>${r.studentName}</strong></td>
+                <td><code>${esc(r.regNo)}</code></td>
+                <td><strong>${esc(r.studentName)}</strong></td>
                 <td>${r.classLevel || 'SS 2'}</td>
                 <td>${r.subject || r.examTitle}</td>
                 <td><strong>${r.score}</strong></td>
@@ -2779,7 +3100,7 @@ function exportResultsCSV() {
       let csv = 'RegNo,CandidateName,Class,Subject,Session,Term,Score,TotalMarks,Percentage,Grade,Status,SubmittedAt,ReceiptID\n';
       results.forEach(r => {
         const g = getGradeLetter(r.percentage);
-        csv += `"${r.regNo}","${r.studentName}","${r.classLevel || ''}","${r.subject || r.examTitle}","${r.session || '2026/2027'}","${r.term || '1st Term'}","${r.score}","${r.totalMarks}","${r.percentage}%","${g.grade}","${r.passed ? 'PASS' : 'FAIL'}","${r.submittedAt}","${r.submissionId}"\n`;
+        csv += `"${esc(r.regNo)}","${esc(r.studentName)}","${r.classLevel || ''}","${r.subject || r.examTitle}","${r.session || '2026/2027'}","${r.term || '1st Term'}","${r.score}","${r.totalMarks}","${r.percentage}%","${g.grade}","${r.passed ? 'PASS' : 'FAIL'}","${r.submittedAt}","${r.submissionId}"\n`;
       });
 
       const blob = new Blob([csv], { type: 'text/csv' });
@@ -2826,6 +3147,12 @@ async function handleAdminLogin(e) {
       const pass = document.getElementById('adminPass');
       if (pass) pass.value = '';
       initAdmin();
+      if (data.mustChangePassword) {
+        setTimeout(() => {
+          alert('Security: this terminal still uses the default supervisor password (admin123).\n\nPlease set a new password now in School Branding → Supervisor Security.');
+          try { switchTab('tabBranding'); } catch (e) {}
+        }, 400);
+      }
     } else {
       if (errEl) {
         errEl.textContent = data.message || 'Invalid supervisor username or password.';
@@ -2953,3 +3280,40 @@ function bootAdmin() {
   }
 }
 bootAdmin();
+
+
+// --- Supervisor Security (password + kiosk exit PIN) ---------------------------
+async function changeAdminPassword(e) {
+  e.preventDefault();
+  const cur = document.getElementById('secCurPass').value;
+  const np = document.getElementById('secNewPass').value;
+  const np2 = document.getElementById('secNewPass2').value;
+  if (np !== np2) { alert('The two new passwords do not match.'); return; }
+  try {
+    const res = await fetch('/api/admin/change-password', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: cur, newPassword: np })
+    });
+    const data = await res.json();
+    if (data.success) {
+      if (data.token) setAdminToken(data.token);
+      ['secCurPass', 'secNewPass', 'secNewPass2'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      alert('Supervisor password changed. Other logged-in consoles have been signed out.');
+    } else {
+      alert(data.message || 'Could not change the password.');
+    }
+  } catch (err) { alert('Server communication error.'); }
+}
+
+async function saveKioskExitPin() {
+  const pin = (document.getElementById('secKioskPin').value || '').trim();
+  try {
+    const res = await fetch('/api/admin/branding', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kioskExitPin: pin })
+    });
+    const data = await res.json();
+    if (data.success) { currentBranding = data.branding; alert('Kiosk exit PIN saved. Student terminals check it with this server.'); }
+    else alert(data.message || 'Could not save the PIN.');
+  } catch (err) { alert('Server communication error.'); }
+}

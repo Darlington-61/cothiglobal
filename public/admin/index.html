@@ -668,6 +668,8 @@
 
         <!-- TAB 3: COTHI SCHOOL EXAMS (Questions Created by COTHI) -->
         <section id="tabCothi" class="tab-pane">
+          <div id="cothiExamsContainer" class="cothi-exams-grid"></div>
+        </section>
 
         <!-- TAB: EXAMS LIBRARY -->
         <section id="tabExams" class="tab-pane">
@@ -794,6 +796,28 @@
                 </div>
               </div>
             </div>
+            <!-- SUPERVISOR SECURITY CARD -->
+            <div class="card" style="grid-column: 1 / -1;">
+              <div class="card-header-bar">
+                <h3>Supervisor Security</h3>
+                <span class="badge-info">This Terminal</span>
+              </div>
+              <div class="card-body" style="display:flex; flex-wrap:wrap; gap:28px;">
+                <form onsubmit="changeAdminPassword(event)" style="flex:1; min-width:260px;">
+                  <h4 style="font-size:0.95rem; margin-bottom:10px;">Change supervisor password</h4>
+                  <div class="form-group"><label>Current password</label><input type="password" id="secCurPass" required autocomplete="current-password"></div>
+                  <div class="form-group"><label>New password (min. 8 characters)</label><input type="password" id="secNewPass" required minlength="8" autocomplete="new-password"></div>
+                  <div class="form-group"><label>Repeat new password</label><input type="password" id="secNewPass2" required minlength="8" autocomplete="new-password"></div>
+                  <button type="submit" class="btn btn-primary">🔒 Change Password</button>
+                </form>
+                <div style="flex:1; min-width:260px;">
+                  <h4 style="font-size:0.95rem; margin-bottom:10px;">Kiosk exit PIN</h4>
+                  <p class="text-muted text-sm" style="margin-bottom:10px;">The PIN an invigilator types to close the locked student exam app. Keep it away from candidates. 4–8 digits.</p>
+                  <div class="form-group"><label>Exit PIN</label><input type="text" id="secKioskPin" inputmode="numeric" pattern="[0-9]{4,8}" maxlength="8"></div>
+                  <button type="button" class="btn btn-outline" onclick="saveKioskExitPin()">💾 Save Exit PIN</button>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -883,20 +907,38 @@
     </main>
   </div>
 
-  <!-- PRINT CANDIDATE SLIPS MODAL -->
+    <!-- PRINT CANDIDATE SLIPS MODAL -->
   <div id="modalPrintSlips" class="login-overlay" style="display: none; z-index: 9999;">
-    <div style="background:#ffffff; border-radius:16px; width:90%; max-width:960px; max-height:90vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 25px 50px -12px rgba(0,0,0,0.4);">
-      <div style="padding:16px 24px; background:#222e3c; color:white; display:flex; justify-content:space-between; align-items:center;">
+    <div style="background:#ffffff; border-radius:16px; width:95%; max-width:1150px; max-height:92vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 25px 50px -12px rgba(0,0,0,0.4);">
+      <div style="padding:14px 20px; background:#1e293b; color:white; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; border-bottom:1px solid #334155;">
         <div>
-          <h3 style="margin:0; font-size:1.2rem; font-weight:700;">🖨️ Printable Candidate Exam Slips</h3>
-          <small style="color:#93c5fd;">Print or cut out slips to distribute to candidates entering the exam hall</small>
+          <h3 style="margin:0; font-size:1.15rem; font-weight:700; display:flex; align-items:center; gap:8px;">
+            <span>🖨️</span> Candidate Exam Login Slips & Clean PDF
+          </h3>
+          <small style="color:#94a3b8;">High-density multi-slip A4 layout for proctors and candidates</small>
         </div>
-        <div style="display:flex; gap:10px;">
-          <button class="btn btn-primary btn-sm" onclick="triggerPrintSlips()">🖨️ Print Slips Now</button>
-          <button class="btn btn-outline-danger btn-sm" onclick="closePrintSlipsModal()" style="color:white; border-color:rgba(255,255,255,0.4);">✕ Close</button>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <div style="display:flex; align-items:center; gap:6px; background:#334155; padding:4px 10px; border-radius:8px;">
+            <label style="font-size:0.75rem; color:#cbd5e1; margin:0; font-weight:600;">Class:</label>
+            <select id="slipsClassFilter" onchange="renderSlipsPreview()" style="background:#1e293b; color:white; border:1px solid #475569; border-radius:6px; padding:3px 8px; font-size:0.8rem; cursor:pointer;">
+              <option value="ALL">All Classes</option>
+            </select>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px; background:#334155; padding:4px 10px; border-radius:8px;">
+            <label style="font-size:0.75rem; color:#cbd5e1; margin:0; font-weight:600;">Layout:</label>
+            <select id="slipsDensitySelect" onchange="renderSlipsPreview()" style="background:#1e293b; color:white; border:1px solid #475569; border-radius:6px; padding:3px 8px; font-size:0.8rem; cursor:pointer;">
+              <option value="10">10 Slips / Page (2 × 5 - Large & Clear)</option>
+              <option value="12" selected>12 Slips / Page (2 × 6 - Paper Saver)</option>
+              <option value="16">16 Slips / Page (2 × 8 - Ultra Compact)</option>
+            </select>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="triggerPrintSlips()" style="display:flex; align-items:center; gap:6px; font-weight:700; padding:6px 14px;">
+            <span>🖨️</span> Print / Save PDF
+          </button>
+          <button class="btn btn-outline-danger btn-sm" onclick="closePrintSlipsModal()" style="color:white; border-color:rgba(255,255,255,0.4); padding:6px 10px;">✕</button>
         </div>
       </div>
-      <div id="slipsContainer" style="padding:24px; overflow-y:auto; flex:1; background:#f8fafc;">
+      <div id="slipsContainer" style="padding:16px 20px; overflow-y:auto; flex:1; background:#f1f5f9;">
         <!-- Rendered dynamically -->
       </div>
     </div>

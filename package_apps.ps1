@@ -96,7 +96,19 @@ New-Item -ItemType Directory -Force -Path $serverAppRes | Out-Null
 Copy-Item (Join-Path $baseDir "package.json") $serverAppRes -Force
 Copy-Item (Join-Path $baseDir "main.js") $serverAppRes -Force
 Copy-Item -Recurse -Force (Join-Path $baseDir "server") $serverAppRes
-Copy-Item -Recurse -Force (Join-Path $baseDir "data") $serverAppRes
+# Ship only the ACTIVE school's data (no other schools' rosters, no results,
+# no admin password or login tokens). See scripts\prepare_ship_data.js.
+$shipDataDst = Join-Path $serverAppRes "data"
+$shipScript = Join-Path $baseDir "scripts\prepare_ship_data.js"
+$nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+if ($nodeCmd) {
+  & $nodeCmd.Source $shipScript (Join-Path $baseDir "data") $shipDataDst --all-schools
+} else {
+  $env:ELECTRON_RUN_AS_NODE = "1"
+  & (Join-Path $electronBin "electron.exe") $shipScript (Join-Path $baseDir "data") $shipDataDst --all-schools
+  Remove-Item Env:ELECTRON_RUN_AS_NODE
+}
+if (-not (Test-Path (Join-Path $shipDataDst "settings.json"))) { throw "Packaging error: could not prepare installer data folder" }
 Copy-Item -Recurse -Force (Join-Path $baseDir "public") $serverAppRes
 if (Test-Path $iconPath) {
   Copy-Item $iconPath $serverAppRes -Force
@@ -107,9 +119,7 @@ if (Test-Path $iconPath) {
 }
 
 # Keep the active school branding in server data, but reset past exam submissions so clean slate for exams
-$dataDst = Join-Path $serverAppRes "data"
-Set-Content -Path (Join-Path $dataDst "submissions.json") -Value "[]" -Encoding UTF8
-Write-Host "   Active school branding and candidate roster preserved in server package."
+Write-Host "   Active school branding and candidate roster packaged (no results, no other schools, no admin password)."
 
 # Ensure Electron loads our UNPACKED resources\app (a stray/empty app.asar would break it)
 $svAsar = Join-Path $serverAppDir "resources\app.asar"
