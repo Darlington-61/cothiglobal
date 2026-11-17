@@ -131,15 +131,29 @@ function broadcastEvent(eventType, data) {
 // Get Local Wi-Fi / LAN IP addresses
 function getLocalIps() {
   const interfaces = os.networkInterfaces();
-  const addresses = [];
+  const real = [];
+  const fallback = [];
+  const isVirtual = (n) => /vethernet|wsl|virtualbox|vmware|hyper-v|bluetooth|npcap|loopback|tailscale|zerotier|hamachi/i.test(n);
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        addresses.push({ name, ip: iface.address });
+      if (iface.family === 'IPv4' && !iface.internal && !iface.address.startsWith('169.254.')) {
+        const entry = { name, ip: iface.address };
+        if (isVirtual(name)) fallback.push(entry);
+        else real.push(entry);
       }
     }
   }
-  return addresses;
+  const list = real.length > 0 ? real : fallback;
+  // Prioritize 192.168.x.x Wi-Fi/LAN addresses first
+  list.sort((a, b) => {
+    const a192 = a.ip.startsWith('192.168.') ? 0 : 1;
+    const b192 = b.ip.startsWith('192.168.') ? 0 : 1;
+    if (a192 !== b192) return a192 - b192;
+    const aWifi = /wi-?fi|wlan|ethernet/i.test(a.name) ? 0 : 1;
+    const bWifi = /wi-?fi|wlan|ethernet/i.test(b.name) ? 0 : 1;
+    return aWifi - bWifi;
+  });
+  return list;
 }
 
 // MIME types
