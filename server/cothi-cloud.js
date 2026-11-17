@@ -502,8 +502,10 @@ const cothiCloud = {
         })
       });
 
-      function sendToHost(host, servername) {
-        return new Promise((resResolve, resReject) => {
+      function sendKeyPost(keyName, valueObj, authToken) {
+        const tok = authToken || getAuthToken();
+        const payload = JSON.stringify({ key: keyName, value: JSON.stringify(valueObj) });
+        const attempt = (host, servername) => new Promise((resResolve, resReject) => {
           const options = {
             hostname: host,
             port: 443,
@@ -512,36 +514,84 @@ const cothiCloud = {
             headers: {
               'Host': 'cbtbycothi.com.ng',
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`,
+              'Authorization': `Bearer ${tok}`,
               'Accept': '*/*',
               'User-Agent': 'curl/8.4.0',
-              'Content-Length': Buffer.byteLength(postData)
+              'Content-Length': Buffer.byteLength(payload)
             },
-            timeout: 20000
+            timeout: 25000
           };
           if (servername) options.servername = servername;
 
           const req = https.request(options, (res) => {
+            if ((res.statusCode === 401 || res.statusCode === 403) && tok !== 'mock-access-token' && legacyTokenAllowed()) {
+              res.resume();
+              return sendKeyPost(keyName, valueObj, 'mock-access-token').then(resResolve).catch(resReject);
+            }
+            res.resume();
             resResolve({ success: res.statusCode >= 200 && res.statusCode < 300, statusCode: res.statusCode });
           });
           req.on('error', (e) => resReject(e));
           req.on('timeout', () => { req.destroy(); resReject(new Error('Timeout')); });
-          req.write(postData);
+          req.write(payload);
           req.end();
         });
+        return attempt('cbtbycothi.com.ng').catch(() => attempt('66.235.174.177', 'cbtbycothi.com.ng'));
       }
 
       try {
-        const result = await sendToHost('cbtbycothi.com.ng');
-        resolve(result);
-      } catch (err) {
-        console.warn(`[COTHI CLOUD] Result push via hostname failed (${err.message}). Trying direct IP...`);
+        const code = String(schoolCode || 'school').trim().toLowerCase();
+        const offlineKey = terminalId ? `cbt_offline_results_${code}_${terminalId}` : `cbt_offline_results_${code}`;
+        const offlineVal = {
+          syncedAt: new Date().toISOString(),
+          schoolCode: code,
+          totalSubmissions: (submissions || []).length,
+          records: submissions || []
+        };
+        const r1 = await sendKeyPost(offlineKey, offlineVal);
+
+        // Also merge & push into examResults_<schoolId> so Main COTHI (cbtbycothi.com.ng) displays all results!
+        const cached = this.loadCachedSchools();
+        const matched = cached.find(s => aliasesFor(code).includes(String(s.code || '').toLowerCase()));
+        const codeToId = { immaculate: 'school_icss', icss: 'school_icss', godscare: 'school_god', god: 'school_god' };
+        const schoolId = (matched && matched.id) || codeToId[code] || `school_${code}`;
+        const mainResultsKey = `examResults_${schoolId}`;
+
+        let existingResults = [];
         try {
-          const ipResult = await sendToHost('66.235.174.177', 'cbtbycothi.com.ng');
-          resolve(ipResult);
-        } catch (ipErr) {
-          resolve({ success: false, error: ipErr.message });
-        }
+          const cloud = await fetchRawCloudData();
+          if (cloud && cloud[mainResultsKey]) {
+            const parsed = JSON.parse(cloud[mainResultsKey]);
+            if (Array.isArray(parsed)) existingResults = parsed;
+          }
+        } catch (_) {}
+
+        const resMap = new Map();
+        existingResults.forEach(r => { if (r && r.id) resMap.set(r.id, r); });
+        (submissions || []).forEach(sub => {
+          const rid = sub.submissionId || `${sub.regNo}_${sub.examId}`;
+          resMap.set(rid, {
+            id: rid,
+            schoolId,
+            studentId: sub.regNo,
+            studentName: sub.studentName,
+            classLevel: sub.classLevel || '',
+            examId: sub.examId,
+            examTitle: sub.examTitle,
+            subject: sub.subject || '',
+            score: sub.score,
+            totalMarks: sub.totalMarks,
+            percentage: sub.percentage,
+            passed: !!sub.passed,
+            submittedAt: sub.submittedAt || new Date().toISOString(),
+            source: 'offline_cbt_server'
+          });
+        });
+
+        const r2 = await sendKeyPost(mainResultsKey, Array.from(resMap.values()));
+        resolve({ success: r1.success && r2.success, statusCode: r2.statusCode, mainResultsKey, totalCloudResults: resMap.size });
+      } catch (err) {
+        resolve({ success: false, error: err.message });
       }
     });
   },

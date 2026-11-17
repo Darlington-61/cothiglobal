@@ -2490,6 +2490,7 @@ function renderExamsTables() {
             ? '<button class="btn btn-sm btn-outline" disabled style="opacity:0.7;">✓ Active</button>'
             : `<button class="btn btn-sm btn-success" onclick="openSetActiveModal('${jsa(ex.id)}', '${jsa(ex.title)}', '${jsa(session)}', '${jsa(term)}')">▶ Set Active</button>`
           }
+          <button class="btn btn-sm btn-outline" onclick="printExamPaperPdf('${jsa(ex.id)}')" title="Print / Save Branded Exam Paper PDF">📄 Paper</button>
           <button class="btn btn-sm btn-primary" onclick="uploadExamsToCothiCloud('${jsa(ex.id)}', '${jsa(ex.title)}')" title="Upload this exam to COTHI Cloud">☁️ Cloud</button>
           <button class="btn btn-sm btn-outline" onclick="scheduleExam('${jsa(ex.id)}')" title="Schedule date &amp; time">📅</button>
           ${isFormer
@@ -2532,6 +2533,114 @@ async function toggleArchiveExam(examId, archived) {
     if (d.success) fetchExamsList();
     else alert(d.message || 'Could not update exam.');
   } catch (e) { alert('Server communication error.'); }
+}
+
+async function printExamPaperPdf(examId) {
+  const ex = (window._examsCache || []).find(e => e.id === examId);
+  if (!ex) { alert('Exam not found — refresh the list and try again.'); return; }
+
+  if (!currentBranding || !currentBranding.schoolLogo) {
+    try {
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      if (data && data.branding) currentBranding = data.branding;
+    } catch (_) {}
+  }
+
+  const b = currentBranding || {};
+  const schoolName = b.schoolName || 'IMMACULATE COMPREHENSIVE SECONDARY SCHOOL, ENUGU';
+  const schoolMotto = b.schoolMotto || 'Truth is Wisdom';
+  const schoolLogo = b.schoolLogo || '/uploads/immaculate_logo.jpg';
+  const questions = ex.questions || [];
+  const totalMarks = questions.reduce((s, q) => s + (Number(q.marks) || 1), 0);
+
+  const qHtml = questions.map((q, idx) => {
+    const opts = q.options || {};
+    const imgHtml = q.image ? `<div style="margin:6px 0;"><img src="${q.image}" style="max-height:140px; border:1px solid #cbd5e1; border-radius:4px;"></div>` : '';
+    return `
+      <div style="margin-bottom:14px; page-break-inside:avoid; break-inside:avoid;">
+        <div style="font-weight:700; font-size:0.95rem; color:#0f172a; margin-bottom:4px;">
+          ${idx + 1}. ${esc(q.question || q.text || '')} <span style="font-weight:500; color:#64748b; font-size:0.8rem;">(${q.marks || 1} mk${(q.marks || 1) > 1 ? 's' : ''})</span>
+        </div>
+        ${imgHtml}
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 18px; padding-left:18px; font-size:0.9rem; color:#1e293b;">
+          ${['A', 'B', 'C', 'D'].map(L => opts[L] ? `<div><strong>${L}.</strong> ${esc(opts[L])}</div>` : '').join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const keyHtml = questions.map((q, idx) =>
+    `<span style="display:inline-block; min-width:68px; margin:2px 6px 2px 0; font-family:monospace; font-size:0.85rem;"><strong>${idx + 1}:</strong> ${esc(q.correctAnswer || 'A')}</span>`
+  ).join('');
+
+  const win = window.open('', '_blank', 'width=950,height=800');
+  if (!win) { alert('Pop-up blocked. Please allow pop-ups to print or save PDF.'); return; }
+
+  win.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <base href="${window.location.origin}/">
+        <title>${esc(ex.title)} - Branded Exam Paper</title>
+        <style>
+          @page { size: A4 portrait; margin: 14mm; }
+          * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #0f172a; margin: 0; padding: 16px; background: #f1f5f9; }
+          .paper { max-width: 190mm; margin: 0 auto; background: #fff; padding: 24px 28px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+          .header { display: flex; align-items: center; gap: 14px; border-bottom: 2.5px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 14px; }
+          .header img { width: 58px; height: 58px; object-fit: contain; flex-shrink: 0; }
+          .meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; font-size: 0.82rem; margin-bottom: 14px; }
+          .inst { background: #eff6ff; border-left: 4px solid #1e3a8a; padding: 8px 12px; font-size: 0.85rem; margin-bottom: 18px; }
+          .ans-key { margin-top: 24px; padding-top: 14px; border-top: 2px dashed #94a3b8; display: none; page-break-before: auto; }
+          @media print {
+            body { background: #fff; padding: 0; }
+            .paper { box-shadow: none; padding: 0; max-width: 100%; }
+            .no-print { display: none !important; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="no-print" style="max-width:190mm; margin:0 auto 12px auto; display:flex; justify-content:space-between; align-items:center; background:#1e293b; color:#fff; padding:10px 16px; border-radius:8px;">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.9rem;">
+            <input type="checkbox" onchange="document.getElementById('ansKeyBox').style.display = this.checked ? 'block' : 'none'">
+            Include Teacher Answer Key
+          </label>
+          <button onclick="window.print()" style="background:#2563eb; color:#fff; border:none; padding:8px 18px; border-radius:6px; font-weight:700; cursor:pointer;">🖨️ Print / Save Exam PDF</button>
+        </div>
+        <div class="paper">
+          <div class="header">
+            ${schoolLogo ? `<img src="${schoolLogo}" alt="Logo">` : ''}
+            <div>
+              <h1 style="margin:0; font-size:1.25rem; color:#1e3a8a; text-transform:uppercase;">${esc(schoolName)}</h1>
+              <div style="font-size:0.82rem; color:#64748b; font-style:italic;">"${esc(schoolMotto)}"</div>
+              <div style="font-size:0.95rem; font-weight:700; margin-top:4px; color:#0f172a;">${esc(ex.title)}</div>
+            </div>
+          </div>
+          <div class="meta">
+            <div><strong>Subject:</strong> ${esc(ex.subject || '-')}</div>
+            <div><strong>Class:</strong> ${esc(ex.classLevel || '-')}</div>
+            <div><strong>Time:</strong> ${ex.durationMinutes || 45} Mins</div>
+            <div><strong>Questions:</strong> ${questions.length} (${totalMarks} Marks)</div>
+          </div>
+          <div class="inst"><strong>Instructions:</strong> ${esc(ex.instructions || 'Answer all questions carefully.')}</div>
+          ${qHtml || '<p>No questions in this exam.</p>'}
+          <div id="ansKeyBox" class="ans-key">
+            <h3 style="margin:0 0 8px 0; font-size:0.95rem; color:#1e3a8a;">TEACHER MARKING SCHEME / ANSWER KEY</h3>
+            <div>${keyHtml}</div>
+          </div>
+        </div>
+        <script>
+          window.onload = function() {
+            Promise.all(Array.from(document.images).map(i => i.complete ? Promise.resolve() : new Promise(r => { i.onload = i.onerror = r; })))
+              .then(() => setTimeout(() => window.print(), 350));
+          };
+        </script>
+      </body>
+    </html>
+  `);
+  win.document.close();
 }
 
 async function uploadExamsToCothiCloud(examId, examTitle) {
