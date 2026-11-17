@@ -683,7 +683,10 @@
           <div class="card">
             <div class="card-header-bar">
               <h3>All Saved Exams</h3>
-              <button class="btn btn-outline btn-sm" onclick="fetchExamsList()">🔄 Refresh</button>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <button class="btn btn-primary btn-sm" onclick="uploadExamsToCothiCloud()">☁️ Upload All to COTHI Cloud</button>
+                <button class="btn btn-outline btn-sm" onclick="fetchExamsList()">🔄 Refresh</button>
+              </div>
             </div>
             <div class="table-responsive">
               <table class="data-table">

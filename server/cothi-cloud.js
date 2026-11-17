@@ -605,6 +605,106 @@ const cothiCloud = {
         }
       }
     });
+  },
+
+  async pushExamsToCloud(schoolCode, exams) {
+    const code = String(schoolCode || '').trim().toLowerCase();
+    if (!code) return { success: false, error: 'School code is required' };
+    if (!Array.isArray(exams) || exams.length === 0) return { success: false, error: 'No exams selected to upload' };
+
+    const cached = this.loadCachedSchools();
+    const aliases = aliasesFor(code);
+    const matched = cached.find(s => aliases.includes(String(s.code || '').toLowerCase()));
+    const codeToCloudId = { immaculate: 'school_icss', icss: 'school_icss', godscare: 'school_god', god: 'school_god' };
+    const schoolId = (matched && matched.id) || codeToCloudId[code] || `school_${code}`;
+    const syncKey = `customExams_${schoolId}`;
+
+    // Fetch existing cloud exams for this school so we merge instead of wiping
+    let existing = [];
+    try {
+      const cloud = await fetchRawCloudData();
+      if (cloud && cloud[syncKey]) {
+        const parsed = JSON.parse(cloud[syncKey]);
+        if (Array.isArray(parsed)) existing = parsed;
+      }
+    } catch (_) {}
+
+    const mergedMap = new Map();
+    existing.forEach(ex => { if (ex && ex.id) mergedMap.set(ex.id, ex); });
+    exams.forEach(ex => {
+      if (!ex || !ex.id) return;
+      mergedMap.set(ex.id, {
+        id: ex.id,
+        schoolId,
+        schoolCode: code,
+        title: ex.title || 'Untitled Examination',
+        subject: ex.subject || 'General Studies',
+        classGrade: ex.classLevel || ex.classGrade || 'SS 1',
+        classLevel: ex.classLevel || ex.classGrade || 'SS 1',
+        duration: (Number(ex.durationMinutes) || 40) * 60,
+        passMark: Number(ex.passPercentage) || 50,
+        instructions: ex.instructions || 'Answer all questions carefully.',
+        questions: (ex.questions || []).map((q, idx) => ({
+          id: q.id || (idx + 1),
+          question: q.question || q.text || `Question ${idx + 1}`,
+          text: q.question || q.text || `Question ${idx + 1}`,
+          options: q.options || { A: '', B: '', C: '', D: '' },
+          correctAnswer: (q.correctAnswer || q.correct || 'A').toUpperCase(),
+          marks: q.marks || 1,
+          diagram: q.diagram || undefined,
+          passage: q.passage || undefined
+        })),
+        updatedAt: new Date().toISOString()
+      });
+    });
+
+    const payloadArr = Array.from(mergedMap.values());
+    const postData = JSON.stringify({ key: syncKey, value: JSON.stringify(payloadArr) });
+
+    function sendPost(host, servername, authToken) {
+      const tok = authToken || getAuthToken();
+      return new Promise((resResolve, resReject) => {
+        const options = {
+          hostname: host,
+          port: 443,
+          path: '/api/v1/sync',
+          method: 'POST',
+          headers: {
+            'Host': 'cbtbycothi.com.ng',
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${tok}`,
+            'Accept': '*/*',
+            'User-Agent': 'curl/8.4.0',
+            'Content-Length': Buffer.byteLength(postData)
+          },
+          timeout: 30000
+        };
+        if (servername) options.servername = servername;
+        const req = https.request(options, (res) => {
+          if ((res.statusCode === 401 || res.statusCode === 403) && tok !== 'mock-access-token' && legacyTokenAllowed()) {
+            res.resume();
+            return sendPost(host, servername, 'mock-access-token').then(resResolve).catch(resReject);
+          }
+          let body = '';
+          res.on('data', c => body += c);
+          res.on('end', () => resResolve({ success: res.statusCode >= 200 && res.statusCode < 300, statusCode: res.statusCode, body, uploadedCount: exams.length, totalCloudExams: payloadArr.length, syncKey }));
+        });
+        req.on('error', resReject);
+        req.on('timeout', () => { req.destroy(); resReject(new Error('Timeout')); });
+        req.write(postData);
+        req.end();
+      });
+    }
+
+    try {
+      return await sendPost('cbtbycothi.com.ng');
+    } catch (_) {
+      try {
+        return await sendPost('66.235.174.177', 'cbtbycothi.com.ng');
+      } catch (ipErr) {
+        return { success: false, error: ipErr.message };
+      }
+    }
   }
 };
 

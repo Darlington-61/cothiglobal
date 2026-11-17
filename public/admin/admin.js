@@ -2365,6 +2365,7 @@ async function fetchExamsList() {
               ? '<button class="btn btn-sm btn-outline" disabled style="opacity:0.7;">✓ Active</button>'
               : `<button class="btn btn-sm btn-success" onclick="openSetActiveModal('${jsa(ex.id)}', '${jsa(ex.title)}', '${jsa(session)}', '${jsa(term)}')">▶ Set Active</button>`
             }
+            <button class="btn btn-sm btn-primary" onclick="uploadExamsToCothiCloud('${jsa(ex.id)}', '${jsa(ex.title)}')" title="Upload this exam to COTHI Cloud">☁️ Cloud</button>
             <button class="btn btn-sm btn-outline" onclick="scheduleExam('${jsa(ex.id)}')" title="Schedule date &amp; time">📅</button>
             <button class="btn btn-sm btn-outline-danger" onclick="deleteExamItem('${jsa(ex.id)}', '${jsa(ex.title)}')" title="Delete Exam">🗑️</button>
           </td>
@@ -2373,6 +2374,28 @@ async function fetchExamsList() {
     }).join('');
   } catch (err) {
     tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">Failed to load exams library.</td></tr>';
+  }
+}
+
+async function uploadExamsToCothiCloud(examId, examTitle) {
+  const label = examId ? `exam "${examTitle || examId}"` : 'ALL exams for this school';
+  if (!confirm(`Upload ${label} to COTHI Cloud (cbtbycothi.com.ng)?\n\nOnce uploaded, any CBT Server connected to the internet can download them.`)) {
+    return;
+  }
+  try {
+    const res = await fetch('/api/admin/push-exams-to-cloud', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(examId ? { examId } : {})
+    });
+    const data = await res.json();
+    if (data.success) {
+      alert(`☁️ Upload Successful!\n\n${data.message}\nTotal exams in cloud for ${data.schoolCode}: ${data.totalCloudExams}`);
+    } else {
+      alert(`❌ Cloud upload failed: ${data.message || 'Check your internet connection.'}`);
+    }
+  } catch (err) {
+    alert('Failed to connect to local server while uploading exams to COTHI Cloud.');
   }
 }
 

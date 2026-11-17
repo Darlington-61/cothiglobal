@@ -960,6 +960,33 @@ const server = http.createServer(async (req, res) => {
     return sendJSON(res, 200, syncReceipt);
   }
 
+  // Admin Upload / Push Local Exams to COTHI Cloud (cbtbycothi.com.ng)
+  if (pathname === '/api/admin/push-exams-to-cloud' && req.method === 'POST') {
+    const body = await parseBody(req);
+    const settings = db.getSettings();
+    const allExams = db.getExams();
+    const targetExams = body.examId
+      ? allExams.filter(e => e.id === body.examId)
+      : allExams;
+    if (targetExams.length === 0) {
+      return sendJSON(res, 400, { success: false, message: 'No matching exams found to upload.' });
+    }
+    const result = await cothiCloud.pushExamsToCloud(settings.schoolCode, targetExams);
+    if (result.success) {
+      return sendJSON(res, 200, {
+        success: true,
+        uploadedCount: result.uploadedCount,
+        totalCloudExams: result.totalCloudExams,
+        schoolCode: settings.schoolCode,
+        message: `Uploaded ${result.uploadedCount} exam(s) to COTHI Cloud (${settings.schoolCode}). Any school server can now download them.`
+      });
+    }
+    return sendJSON(res, 502, {
+      success: false,
+      message: result.error || `COTHI Cloud returned HTTP ${result.statusCode || 500}`
+    });
+  }
+
   // Admin OTA (Over-The-Air) Remote Updates Check
   if (pathname === '/api/admin/ota/check' && req.method === 'GET') {
     try {
