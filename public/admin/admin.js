@@ -1923,9 +1923,50 @@ function addQuestionToList() {
   if (Object.keys(optionImages).length) q.optionImages = optionImages;
   if (window._activePassageId) q.passageId = window._activePassageId;
 
+  const newKey = normalizeQuestionKey(q);
+  if (newKey) {
+    const dupIdx = builderQuestions.findIndex(existing => normalizeQuestionKey(existing) === newKey);
+    if (dupIdx >= 0) {
+      if (!confirm(`⚠️ Duplicate Question Detected!\n\nThis question already exists at Question #${dupIdx + 1}.\n\nClick OK to add it anyway, or Cancel to edit it.`)) {
+        return;
+      }
+    }
+  }
+
   builderQuestions.push(q);
   renderBuilderQuestions();
   clearQuestionInputs();
+}
+
+function normalizeQuestionKey(q) {
+  const raw = typeof q === 'string' ? q : (q && (q.question || q.text) || '');
+  return String(raw)
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[^\w\s]/g, '')
+    .trim();
+}
+
+function findDuplicateQuestionMap(list) {
+  const seen = new Map();
+  const dups = new Map(); // index -> firstIndex
+  (list || []).forEach((q, idx) => {
+    const k = normalizeQuestionKey(q);
+    if (!k) return;
+    if (seen.has(k)) {
+      dups.set(idx, seen.get(k));
+    } else {
+      seen.set(k, idx);
+    }
+  });
+  return dups;
+}
+
+function removeDuplicateBuilderQuestions() {
+  const dups = findDuplicateQuestionMap(builderQuestions);
+  if (dups.size === 0) return;
+  builderQuestions = builderQuestions.filter((_, idx) => !dups.has(idx));
+  renderBuilderQuestions();
 }
 
 function clearQuestionInputs() {
@@ -1953,13 +1994,31 @@ function renderBuilderQuestions() {
   }
 
   container.innerHTML = '';
+  const dupMap = findDuplicateQuestionMap(builderQuestions);
+  if (dupMap.size > 0) {
+    const warn = document.createElement('div');
+    warn.style.cssText = 'display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 14px; margin-bottom:12px; background:#fef3c7; border:1.5px solid #f59e0b; border-radius:8px; color:#92400e; font-size:0.88rem; font-weight:600;';
+    warn.innerHTML = `<span>⚠️ <strong>${dupMap.size} duplicate question(s)</strong> flagged below!</span>`;
+    const cleanBtn = document.createElement('button');
+    cleanBtn.type = 'button';
+    cleanBtn.className = 'btn btn-sm btn-outline';
+    cleanBtn.style.cssText = 'background:#fff; border-color:#d97706; color:#92400e;';
+    cleanBtn.textContent = '🧹 Remove Duplicates';
+    cleanBtn.onclick = removeDuplicateBuilderQuestions;
+    warn.appendChild(cleanBtn);
+    container.appendChild(warn);
+  }
+
   const M = window.CBTMath;
   builderQuestions.forEach((q, idx) => {
+    const firstDupIdx = dupMap.has(idx) ? dupMap.get(idx) : -1;
     const item = document.createElement('div');
-    item.style.cssText = 'padding:14px; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:10px; background:#fff;';
+    item.style.cssText = firstDupIdx >= 0
+      ? 'padding:14px; border:2px solid #f59e0b; border-radius:8px; margin-bottom:10px; background:#fffbeb;'
+      : 'padding:14px; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:10px; background:#fff;';
 
     const head = document.createElement('div');
-    head.style.cssText = 'display:flex; justify-content:space-between; margin-bottom:6px;';
+    head.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;';
     const title = document.createElement('strong');
     let titleText = `Question ${idx + 1} (${q.marks} marks)`;
     if (q.passageId) {
@@ -1967,6 +2026,12 @@ function renderBuilderQuestions() {
       titleText += '  📖 ' + (p && p.title ? ('[' + p.title.slice(0, 40) + ']') : '[passage]');
     }
     title.textContent = titleText;
+    if (firstDupIdx >= 0) {
+      const dupBadge = document.createElement('span');
+      dupBadge.style.cssText = 'margin-left:8px; background:#f59e0b; color:#fff; padding:2px 8px; border-radius:9999px; font-size:0.72rem; font-weight:800;';
+      dupBadge.textContent = `⚠️ DUPLICATE (same as Q#${firstDupIdx + 1})`;
+      title.appendChild(dupBadge);
+    }
     const del = document.createElement('button');
     del.className = 'btn btn-outline-danger btn-sm';
     del.textContent = 'Delete';
@@ -2029,6 +2094,14 @@ async function saveAndDeployExam() {
   if (builderQuestions.length === 0) {
     alert('Please add at least 1 question to the exam.');
     return;
+  }
+
+  const builderDupMap = findDuplicateQuestionMap(builderQuestions);
+  if (builderDupMap.size > 0) {
+    const sample = Array.from(builderDupMap.entries()).slice(0, 5).map(([i, first]) => `Q#${i + 1} (same as Q#${first + 1})`).join(', ');
+    if (!confirm(`⚠️ ${builderDupMap.size} Duplicate Question(s) Flagged!\n\nDuplicates: ${sample}\n\nClick OK to save anyway, or Cancel to review / remove duplicates.`)) {
+      return;
+    }
   }
 
   const maxTrials = parseInt(document.getElementById('newExamTrials') ? document.getElementById('newExamTrials').value : '1') || 1;
@@ -2233,7 +2306,9 @@ function parseQuestionBulkFile(input) {
 
       if (parsedBulkQuestions.length > 0) {
         previewDiv.style.display = 'block';
+        const bulkDupMap = findDuplicateQuestionMap(parsedBulkQuestions);
         let msg = `${parsedBulkQuestions.length} valid question(s) ready for import`;
+        if (bulkDupMap.size > 0) msg += ` — ⚠️ ${bulkDupMap.size} duplicate(s) flagged`;
         if (skipped.length) msg += ` — ${skipped.length} row(s) skipped (see notice)`;
         countEl.textContent = msg;
       } else {
@@ -2276,6 +2351,13 @@ function importQuestionsIntoBuilder() {
 
 async function importQuestionsAsNewExam() {
   if (parsedBulkQuestions.length === 0) return;
+  const bulkDupMap = findDuplicateQuestionMap(parsedBulkQuestions);
+  if (bulkDupMap.size > 0) {
+    const sample = Array.from(bulkDupMap.entries()).slice(0, 5).map(([i, first]) => `Q#${i + 1} (same as Q#${first + 1})`).join(', ');
+    if (!confirm(`⚠️ ${bulkDupMap.size} Duplicate Question(s) Detected in File!\n\nDuplicates: ${sample}\n\nClick OK to import anyway, or Cancel to click "Import into Builder" and remove duplicates.`)) {
+      return;
+    }
+  }
   const title = document.getElementById('newExamTitle').value.trim() || 'Imported Examination ' + new Date().toLocaleDateString();
   const subject = document.getElementById('newExamSubject').value.trim() || 'General';
   const classLevel = document.getElementById('newExamClass').value.trim() || 'SS 2';
