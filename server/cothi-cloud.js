@@ -252,7 +252,7 @@ function parseCloudPayload(cloud) {
       .filter(st => {
         const stSchId = (st.schoolId || '').toLowerCase().replace('school_', '');
         const stSchCode = (st.schoolCode || '').toLowerCase();
-        return codesToMatch.some(c => stSchId === c || stSchCode === c || id === `school_${c}`);
+        return codesToMatch.some(c => stSchId === c || stSchCode === c);
       })
       .forEach((st, idx) => {
         const reg = (st.username || st.regNo || `${code.toUpperCase()}/${new Date().getFullYear()}/${String(idx + 1).padStart(3, '0')}`).trim();
