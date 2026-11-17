@@ -2325,56 +2325,131 @@ let activeExamTargetId = null;
 
 async function fetchExamsList() {
   const tbody = document.getElementById('examsListBody');
+  const formerBody = document.getElementById('formerExamsListBody');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">Loading exams library...</td></tr>';
+  if (formerBody) formerBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">Loading...</td></tr>';
 
   try {
     const res = await fetch('/api/admin/exams');
     const exams = await res.json();
     const statusRes = await fetch('/api/status');
     const statusData = await statusRes.json();
-    const activeId = statusData.activeExam ? statusData.activeExam.id : null;
-
-    if (!exams || exams.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No exams found. Use Question Builder or Import to create exams.</td></tr>';
-      return;
-    }
-
-    window._examsCache = exams;
-    tbody.innerHTML = exams.map(ex => {
-      const isActive = ex.id === activeId;
-      const session = ex.session || '2026/2027';
-      const term = ex.term || '1st Term';
-      const qCount = ex.questions ? ex.questions.length : 0;
-
-      return `
-        <tr style="${isActive ? 'background:#f0fdf4;' : ''}">
-          <td>
-            <strong>${esc(ex.title)}</strong>
-            ${isActive ? '<span class="status-pill status-writing" style="margin-left:8px;"><span class="pulse-dot"></span>ACTIVE</span>' : ''}
-            ${examScheduleInfo(ex)}
-          </td>
-          <td>${esc(ex.subject)}</td>
-          <td><span class="badge-tag">${esc(ex.classLevel)}</span></td>
-          <td><strong>${session}</strong></td>
-          <td><span class="badge-tag">${term}</span></td>
-          <td>${qCount} Questions</td>
-          <td>${ex.durationMinutes} Mins</td>
-          <td style="text-align:right; white-space:nowrap;">
-            ${isActive
-              ? '<button class="btn btn-sm btn-outline" disabled style="opacity:0.7;">✓ Active</button>'
-              : `<button class="btn btn-sm btn-success" onclick="openSetActiveModal('${jsa(ex.id)}', '${jsa(ex.title)}', '${jsa(session)}', '${jsa(term)}')">▶ Set Active</button>`
-            }
-            <button class="btn btn-sm btn-primary" onclick="uploadExamsToCothiCloud('${jsa(ex.id)}', '${jsa(ex.title)}')" title="Upload this exam to COTHI Cloud">☁️ Cloud</button>
-            <button class="btn btn-sm btn-outline" onclick="scheduleExam('${jsa(ex.id)}')" title="Schedule date &amp; time">📅</button>
-            <button class="btn btn-sm btn-outline-danger" onclick="deleteExamItem('${jsa(ex.id)}', '${jsa(ex.title)}')" title="Delete Exam">🗑️</button>
-          </td>
-        </tr>
-      `;
-    }).join('');
+    window._activeExamId = statusData.activeExam ? statusData.activeExam.id : null;
+    window._examsCache = Array.isArray(exams) ? exams : [];
+    renderExamsTables();
   } catch (err) {
     tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">Failed to load exams library.</td></tr>';
   }
+}
+
+function isFormerExam(ex, activeId) {
+  if (ex.id === activeId) return false;
+  if (ex.archived) return true;
+  if (ex.scheduledStart) {
+    const start = new Date(ex.scheduledStart);
+    const end = ex.scheduledEnd ? new Date(ex.scheduledEnd) : new Date(start.getTime() + (ex.durationMinutes || 60) * 60000);
+    if (!isNaN(end.getTime()) && Date.now() > end.getTime()) return true;
+  }
+  return false;
+}
+
+function renderExamsTables() {
+  const tbody = document.getElementById('examsListBody');
+  const formerBody = document.getElementById('formerExamsListBody');
+  if (!tbody) return;
+  const exams = window._examsCache || [];
+  const activeId = window._activeExamId || null;
+  const q = (document.getElementById('examSearchInput')?.value || '').trim().toLowerCase();
+
+  const filtered = q
+    ? exams.filter(ex =>
+        (ex.title || '').toLowerCase().includes(q) ||
+        (ex.subject || '').toLowerCase().includes(q) ||
+        (ex.classLevel || '').toLowerCase().includes(q)
+      )
+    : exams;
+
+  const currentList = filtered.filter(ex => !isFormerExam(ex, activeId));
+  const formerList = filtered.filter(ex => isFormerExam(ex, activeId));
+
+  // Put active exam first, then scheduled upcoming, then ready
+  currentList.sort((a, b) => {
+    if (a.id === activeId) return -1;
+    if (b.id === activeId) return 1;
+    return String(a.subject || '').localeCompare(String(b.subject || ''));
+  });
+
+  const curCount = document.getElementById('currentExamsCount');
+  const formCount = document.getElementById('formerExamsCount');
+  if (curCount) curCount.textContent = currentList.length;
+  if (formCount) formCount.textContent = formerList.length;
+
+  const buildRow = (ex, isFormer) => {
+    const isActive = ex.id === activeId;
+    const session = ex.session || '2026/2027';
+    const term = ex.term || '1st Term';
+    const qCount = ex.questions ? ex.questions.length : 0;
+    return `
+      <tr style="${isActive ? 'background:#f0fdf4;' : ''}">
+        <td>
+          <strong>${esc(ex.title)}</strong>
+          ${isActive ? '<span class="status-pill status-writing" style="margin-left:8px;"><span class="pulse-dot"></span>ACTIVE</span>' : ''}
+          ${examScheduleInfo(ex)}
+        </td>
+        <td>${esc(ex.subject)}</td>
+        <td><span class="badge-tag">${esc(ex.classLevel)}</span></td>
+        <td><strong>${session}</strong></td>
+        <td><span class="badge-tag">${term}</span></td>
+        <td>${qCount} Questions</td>
+        <td>${ex.durationMinutes} Mins</td>
+        <td style="text-align:right; white-space:nowrap;">
+          ${isActive
+            ? '<button class="btn btn-sm btn-outline" disabled style="opacity:0.7;">✓ Active</button>'
+            : `<button class="btn btn-sm btn-success" onclick="openSetActiveModal('${jsa(ex.id)}', '${jsa(ex.title)}', '${jsa(session)}', '${jsa(term)}')">▶ Set Active</button>`
+          }
+          <button class="btn btn-sm btn-primary" onclick="uploadExamsToCothiCloud('${jsa(ex.id)}', '${jsa(ex.title)}')" title="Upload this exam to COTHI Cloud">☁️ Cloud</button>
+          <button class="btn btn-sm btn-outline" onclick="scheduleExam('${jsa(ex.id)}')" title="Schedule date &amp; time">📅</button>
+          ${isFormer
+            ? `<button class="btn btn-sm btn-outline" onclick="toggleArchiveExam('${jsa(ex.id)}', false)" title="Restore to Current/Pre-Exams">↩️ Restore</button>`
+            : (!isActive ? `<button class="btn btn-sm btn-outline" onclick="toggleArchiveExam('${jsa(ex.id)}', true)" title="Move to Former Exams">📦</button>` : '')
+          }
+          <button class="btn btn-sm btn-outline-danger" onclick="deleteExamItem('${jsa(ex.id)}', '${jsa(ex.title)}')" title="Delete Exam">🗑️</button>
+        </td>
+      </tr>
+    `;
+  };
+
+  tbody.innerHTML = currentList.length
+    ? currentList.map(ex => buildRow(ex, false)).join('')
+    : '<tr><td colspan="8" class="text-center text-muted">No current or pre-exams match. Use Create Questions or Restore from Former Exams.</td></tr>';
+
+  if (formerBody) {
+    formerBody.innerHTML = formerList.length
+      ? formerList.map(ex => buildRow(ex, true)).join('')
+      : '<tr><td colspan="8" class="text-center text-muted">No former or ended exams yet.</td></tr>';
+  }
+}
+
+async function toggleArchiveExam(examId, archived) {
+  const ex = (window._examsCache || []).find(e => e.id === examId);
+  if (!ex) return;
+  const updated = { ...ex, archived: !!archived };
+  if (!archived && ex.scheduledStart) {
+    const end = ex.scheduledEnd ? new Date(ex.scheduledEnd) : new Date(new Date(ex.scheduledStart).getTime() + (ex.durationMinutes || 60) * 60000);
+    if (!isNaN(end.getTime()) && Date.now() > end.getTime()) {
+      updated.scheduledStart = '';
+      updated.scheduledEnd = '';
+    }
+  }
+  try {
+    const res = await fetch('/api/admin/exams', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated)
+    });
+    const d = await res.json();
+    if (d.success) fetchExamsList();
+    else alert(d.message || 'Could not update exam.');
+  } catch (e) { alert('Server communication error.'); }
 }
 
 async function uploadExamsToCothiCloud(examId, examTitle) {

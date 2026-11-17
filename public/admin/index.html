@@ -680,10 +680,13 @@
               <p>All locally created and imported exams. Set the active exam for the current session, edit questions, or delete old papers.</p>
             </div>
           </div>
-          <div class="card">
-            <div class="card-header-bar">
-              <h3>All Saved Exams</h3>
-              <div style="display:flex; gap:8px; align-items:center;">
+          <div class="card" style="margin-bottom:20px;">
+            <div class="card-header-bar" style="flex-wrap:wrap; gap:10px;">
+              <div>
+                <h3>📋 Active, Scheduled &amp; Pre-Exams <span id="currentExamsCount" class="badge-tag" style="margin-left:6px;">0</span></h3>
+              </div>
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <input type="text" id="examSearchInput" placeholder="Search subject, title or class..." oninput="renderExamsTables()" style="padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.85rem; min-width:210px;">
                 <button class="btn btn-primary btn-sm" onclick="uploadExamsToCothiCloud()">☁️ Upload All to COTHI Cloud</button>
                 <button class="btn btn-outline btn-sm" onclick="fetchExamsList()">🔄 Refresh</button>
               </div>
@@ -704,6 +707,32 @@
                 </thead>
                 <tbody id="examsListBody">
                   <tr><td colspan="8" class="text-center text-muted">Loading exams...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card" style="border-left:4px solid #94a3b8;">
+            <div class="card-header-bar">
+              <h3>🗄️ Former / Past Exams <span id="formerExamsCount" class="badge-tag" style="margin-left:6px;">0</span></h3>
+              <span class="text-muted text-sm">Ended or archived exams are kept here separately so your current exam list stays clean.</span>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Subject</th>
+                    <th>Class</th>
+                    <th>Session</th>
+                    <th>Term</th>
+                    <th>Questions</th>
+                    <th>Duration</th>
+                    <th style="text-align:right;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="formerExamsListBody">
+                  <tr><td colspan="8" class="text-center text-muted">No former exams yet.</td></tr>
                 </tbody>
               </table>
             </div>
